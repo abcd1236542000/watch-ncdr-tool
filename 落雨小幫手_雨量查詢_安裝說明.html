@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>落雨小幫手 · 雨量查詢工具 — 安裝說明</title>
+<style>
+body{font:15px/1.85 "Microsoft JhengHei","Segoe UI",sans-serif;color:#222;max-width:860px;margin:0 auto;padding:26px 20px 60px}
+h1{font-size:23px;color:#1565c0;border-bottom:3px solid #1565c0;padding-bottom:10px}
+h2{font-size:17px;color:#12508f}
+.card{background:#fafcff;border:1px solid #d6e3f2;border-radius:9px;padding:18px 20px;margin:20px 0}
+.tip{background:#fff8e1;border-left:4px solid #ffb300;padding:9px 13px;margin:12px 0;font-size:14px}
+.warn{background:#fdecea;border-left:4px solid #d32f2f;padding:12px 15px;margin:20px 0;font-size:14px}
+code{background:#eef2f7;padding:1px 5px;border-radius:3px;font-size:13px}
+a.bm{display:inline-block;background:#1565c0;color:#fff;padding:12px 24px;border-radius:7px;
+     text-decoration:none;font-weight:bold;font-size:16px;box-shadow:0 2px 6px rgba(0,0,0,.2)}
+a.bm:hover{background:#1976d2}
+textarea{width:100%;height:90px;font:11px/1.5 monospace;margin-top:8px}
+table{border-collapse:collapse;width:100%;margin-top:10px;font-size:14px}
+th,td{border:1px solid #dde5ef;padding:6px 9px;text-align:left}
+th{background:#eef3fa}
+.sw{display:inline-block;width:15px;height:15px;border-radius:3px;vertical-align:-2px;
+    margin-right:5px;box-shadow:0 0 0 1px rgba(0,0,0,.22)}
+.chip{display:inline-block;min-width:64px;padding:2px 9px;border-radius:9px;
+      font-size:12px;font-weight:bold;text-align:center;box-shadow:0 0 0 1px rgba(0,0,0,.18)}
+footer{margin-top:34px;color:#888;font-size:12.5px;border-top:1px solid #e2e2e2;padding-top:12px}
+.ver{font-size:13px;color:#666;font-weight:normal}
+.err{background:#fdecea;border:1px solid #d32f2f;padding:12px;border-radius:6px;color:#b71c1c}
+</style>
+</head>
+<body>
+
+<!-- 唯一需要更新的檔案是 rain.js，本頁不必再改 -->
+<script src="rain.js"></script>
+
+<h1>🌧️ 落雨小幫手 · 雨量查詢工具 <span class="ver" id="verLabel"></span></h1>
+
+<p>這個小工具在「<b>落雨小幫手</b>」官方網站上執行，直接把<b>雷達雨量雲圖</b>轉換成你所選鄉鎮的
+<b>時間 × 雨量等級</b>表格，讓你一眼看出<b>哪個時段會下雨、雨勢多大</b>（<span id="nFrames"></span>）。</p>
+
+<div id="loadErr" class="err" style="display:none">
+  <b>找不到 rain.js。</b>請確認 <code>rain.js</code> 與本說明檔放在<b>同一個資料夾</b>，再重新整理本頁。
+</div>
+
+<div class="card">
+<h2 style="margin-top:0">① 安裝：把按鈕拖到書籤列</h2>
+<p>把下面這顆按鈕，用滑鼠<b>拖曳</b>到瀏覽器上方的<b>書籤列</b>放開即可完成安裝：</p>
+<p style="text-align:center;margin:20px 0"><a class="bm" id="bmLink" href="#">🌧️ 落雨小幫手雨量查詢</a></p>
+<div class="tip">看不到書籤列？請按 <code>Ctrl</code>+<code>Shift</code>+<code>B</code> 開啟書籤列後再拖曳。</div>
+<details>
+<summary style="cursor:pointer;color:#1565c0">拖曳失敗？改用手動新增書籤（點此展開）</summary>
+<ol>
+<li>在書籤列空白處按右鍵 → <b>加入網頁 / 新增書籤</b>。</li>
+<li>名稱填「落雨小幫手雨量查詢」。</li>
+<li>把下面整段文字<b>全部複製</b>，貼到「網址 / URL」欄位，儲存即可：</li>
+</ol>
+<textarea id="bmText" readonly onclick="this.select()"></textarea>
+</details>
+<div class="tip" id="upgradeTip"></div>
+</div>
+
+<div class="card">
+<h2 style="margin-top:0">② 使用步驟</h2>
+<ol>
+<li>先開啟官方網站：<code>https://watch.ncdr.nat.gov.tw/appv2/</code>，等地圖載入完成。</li>
+<li>點一下書籤列上的「<b>落雨小幫手雨量查詢</b>」書籤，右上角會出現查詢面板。</li>
+<li>用<b>縣市 → 鄉鎮</b>下拉選單選地區；<b>或</b>按「<b>點地圖選點</b>」再點地圖上任一位置。</li>
+<li>你選到的鄉鎮會在地圖上以<b>紅色外框</b>標示，下方表格列出各時段的雨量等級。</li>
+</ol>
+<div class="tip" id="usageNotes"></div>
+</div>
+
+<div class="card">
+<h2 style="margin-top:0">③ 雨量等級對照</h2>
+<p style="font-size:14px;color:#555;margin-top:0">
+下表由 <code>rain.js</code> 的色盤<b>自動產生</b>，與工具實際判讀所用的完全一致。</p>
+<table id="palTable"></table>
+<div class="tip" id="palNotes"></div>
+</div>
+
+<div class="warn"><b>注意事項：</b><br>
+• 本工具<b>必須在落雨小幫手官方網站上執行</b>（雷達圖僅允許同源讀取像素），在其他網站點書籤會出現提示。<br>
+• 資料來源為 NCDR 官方即時雷達，雨量等級由圖上顏色判讀換算，<b>非官方數值，僅供參考</b>。<br>
+• 若面板消失，再點一次書籤即可重新開啟。</div>
+
+<footer>落雨小幫手雨量查詢工具 · 資料來源：國家災害防救科技中心 (NCDR)<br>
+本頁的版本、對照表與說明皆由 <code>rain.js</code> 自動產生，升級時只需替換該檔案。</footer>
+
+<script>
+(function(){
+  if (typeof window.__RH_MAIN !== 'function') {
+    document.getElementById('loadErr').style.display = 'block';
+    return;
+  }
+
+  document.getElementById('loadErr').style.display = 'none';
+
+  var meta = window.__RH_MAIN('meta');
+
+  var code = 'javascript:(' + encodeURIComponent(window.__RH_MAIN.toString()) + ')();';
+  document.getElementById('bmLink').href  = code;
+  document.getElementById('bmText').value = code;
+
+  document.getElementById('verLabel').textContent = 'v' + meta.version;
+  document.getElementById('nFrames').textContent  = meta.notes.frames;
+  document.getElementById('upgradeTip').innerHTML =
+    '本頁書籤為 <b>v' + meta.version + '</b>。升級後請<b>重新拖曳一次</b>並刪除舊書籤；' +
+    '面板標題列會顯示版本號，可據此確認是否已更新。';
+  document.getElementById('usageNotes').innerHTML =
+    meta.notes.obsVsFcst + '；接近現在的時段以淡黃色底標示。首次查詢' +
+    meta.notes.querySeconds + '，同一鄉鎮重查會更快。';
+  document.getElementById('palNotes').innerHTML =
+    meta.notes.coverage + '。<br>' + meta.notes.peak + '。';
+
+  function lum(r,g,b){
+    function f(v){v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);}
+    return 0.2126*f(r)+0.7152*f(g)+0.0722*f(b);
+  }
+  function ratio(a,b){return (Math.max(a,b)+0.05)/(Math.min(a,b)+0.05);}
+  var LD = lum(16,24,32), LL = lum(255,255,255);
+
+  var order = [], byKey = {};
+  meta.palette.forEach(function(p){
+    var name  = meta.levels[p[5]];
+    var range = (p[4] === null) ? ('≥ ' + p[3] + ' mm') : (p[3] + ' ~ ' + p[4] + ' mm');
+    var key   = name + '|' + range;
+    var rgb   = 'rgb(' + p[0] + ',' + p[1] + ',' + p[2] + ')';
+    if (byKey[key]) { byKey[key].colors.push(rgb); return; }
+    byKey[key] = { name:name, range:range, colors:[rgb] };
+    order.push(byKey[key]);
+  });
+
+  var html = '<tr><th style="width:34%">雨量等級</th><th style="width:30%">每 10 分鐘雨量</th><th>圖上代表色</th></tr>';
+  order.forEach(function(r){
+    var c0 = r.colors[0].match(/\d+/g).map(Number);
+    var L  = lum(c0[0], c0[1], c0[2]);
+    var fg = ratio(L, LD) >= ratio(L, LL) ? '#101820' : '#ffffff';
+    html += '<tr><td><span class="chip" style="background:' + r.colors[0] + ';color:' + fg + '">'
+          + r.name + '</span></td><td>' + r.range + '</td><td>'
+          + r.colors.map(function(c){ return '<span class="sw" style="background:' + c + '"></span>'; }).join('')
+          + '<span style="color:#666;font-size:12.5px">'
+          + (r.colors.length > 1 ? '（' + r.colors.length + ' 個色帶）' : '')
+          + '</span></td></tr>';
+  });
+  document.getElementById('palTable').innerHTML = html;
+})();
+</script>
+
+</body>
+</html>
