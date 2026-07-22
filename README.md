@@ -4,6 +4,11 @@
 
 以 **Bookmarklet（書籤小工具）** 形式交付，注入官網頁面後即可使用，無需安裝外掛、無需外部圖資。
 
+> ### 🚀 立即安裝
+> 開啟 **[線上安裝頁 →](https://abcd1236542000.github.io/watch-ncdr-tool/)**，把頁面上的按鈕**拖曳**到瀏覽器書籤列，即完成安裝。
+> 之後到 [NCDR 官網](https://watch.ncdr.nat.gov.tw/appv2/) 點一下該書籤，右上角就會出現查詢面板。
+> （詳細步驟見下方[安裝與使用](#安裝與使用)。）
+
 > 本工具不維護版本號，面板與安裝頁顯示的是 build 當天日期。最近變更見 [`CHANGELOG.md`](./CHANGELOG.md)；完整開發脈絡、踩雷紀錄、每輪迭代細節請見 [`docs/record.md`](./docs/record.md)。
 
 ---
@@ -87,11 +92,20 @@
 
 ## 安裝與使用
 
-1. 開啟安裝頁：部署 GitHub Pages 後直接開 `https://abcd1236542000.github.io/watch-ncdr-tool/`，或本機用瀏覽器開啟根目錄的 [`index.html`](./index.html)
-2. 將頁面上的書籤網址拖曳到瀏覽器書籤列
-3. 到 [watch.ncdr.nat.gov.tw/appv2](https://watch.ncdr.nat.gov.tw/appv2/) 點一下該書籤即可開啟面板
+**線上安裝（推薦，免下載）**
 
-> 因 NCDR 雷達圖 PNG 沒有 CORS 標頭，工具必須在官網同源環境下以 Bookmarklet 形式執行，無法做成獨立網頁。
+1. 開啟 **[線上安裝頁](https://abcd1236542000.github.io/watch-ncdr-tool/)**
+2. 把頁面上的「🌧️ 落雨小幫手雨量查詢」按鈕，用滑鼠**拖曳**到瀏覽器書籤列
+3. 到 [watch.ncdr.nat.gov.tw/appv2](https://watch.ncdr.nat.gov.tw/appv2/)，點一下剛加的書籤 → 右上角出現查詢面板
+4. 面板選「縣市 → 鄉鎮」，或按「點地圖選點」，即可看該地時間 × 雨量等級表格
+
+> 看不到書籤列？按 `Ctrl`＋`Shift`＋`B` 開啟。拖不動？安裝頁有「**改用手動新增書籤**」的展開說明，複製書籤網址自行新增即可。
+
+**本機安裝（不透過 GitHub Pages）**
+
+直接用瀏覽器開啟 repo 根目錄的 [`index.html`](./index.html)，其餘步驟同上。
+
+> 工具必須在 NCDR 官網頁面上以 Bookmarklet 形式執行（雷達圖 PNG 無 CORS 標頭，無法做成獨立網頁；原因見 [`docs/record.md`](./docs/record.md) §2.7）。
 
 ## 檔案結構
 
