@@ -87,7 +87,7 @@
 
 ## 安裝與使用
 
-1. 用瀏覽器開啟 [`dist/落雨小幫手_雨量查詢_安裝說明.html`](./dist/落雨小幫手_雨量查詢_安裝說明.html)
+1. 開啟安裝頁：部署 GitHub Pages 後直接開 `https://abcd1236542000.github.io/watch-ncdr-tool/`，或本機用瀏覽器開啟根目錄的 [`index.html`](./index.html)
 2. 將頁面上的書籤網址拖曳到瀏覽器書籤列
 3. 到 [watch.ncdr.nat.gov.tw/appv2](https://watch.ncdr.nat.gov.tw/appv2/) 點一下該書籤即可開啟面板
 
@@ -99,9 +99,9 @@
 watch-ncdr-tool/
 ├── src/
 │   └── rain.js                         可讀原始碼（含註解），開發時只改這支
-├── dist/                               交付包（HTML 以相對路徑載入同層 rain.js，兩者需一起發佈）
-│   ├── rain.js                         terser 壓縮產出，請勿手改（由 npm run build 產生）
-│   └── 落雨小幫手_雨量查詢_安裝說明.html   安裝頁，書籤網址與雨量對照表由 rain.js 即時產生
+├── index.html                          安裝頁（根目錄供 GitHub Pages），載入 dist/rain.js 產生書籤與對照表
+├── dist/
+│   └── rain.js                         terser 壓縮產出，請勿手改（由 npm run build 產生）
 ├── docs/
 │   ├── record.md                       持續維護的開發紀錄簿：架構、踩雷紀錄、每輪迭代、待辦
 │   └── screenshots/                    本文件使用的操作截圖
@@ -133,7 +133,7 @@ git config core.hooksPath .githooks
 npm run build
 ```
 
-`dist/rain.js` 是建置產物，**請勿手改**——下次 build 會覆蓋。安裝頁 HTML 以相對路徑 `<script src="rain.js">` 載入，因此 `dist/rain.js` 與 HTML **必須同層一起發佈**。
+`dist/rain.js` 是建置產物，**請勿手改**——下次 build 會覆蓋。根目錄安裝頁 `index.html` 以 `<script src="dist/rain.js">` 載入它（放根目錄供 GitHub Pages 部署，也可本機直接開啟）。
 
 **記錄變更（取代升版）**
 

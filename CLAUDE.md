@@ -12,7 +12,7 @@
 | --- | --- | --- |
 | `src/rain.js` | 原始碼（含註解），工具本體 | ✅ **開發只改這支** |
 | `dist/rain.js` | terser 壓縮產物，安裝頁載入的就是它 | ❌ build 產生，手改會被覆蓋 |
-| `dist/落雨小幫手…安裝說明.html` | 安裝頁；`<script src="rain.js">` 相對載入 | 內容固定，須與 `dist/rain.js` **同層** |
+| `index.html` | 安裝頁（放根目錄供 GitHub Pages 部署）；`<script src="dist/rain.js">` 載入 | 內容固定，改版只換 `dist/rain.js` |
 | `docs/record.md` | 開發紀錄簿：架構、踩雷、每輪變更、待辦 | ✅ 每次異動必同步（見該檔頂部「維護鐵則」） |
 | `CHANGELOG.md` | 給人快速掃視的精簡變更清單（日期式、一列一筆） | ✅ 每次異動加一列 |
 | `scripts/build.mjs` | build：terser 壓縮 + 蓋當天日期建置識別碼 | 一般不用動 |

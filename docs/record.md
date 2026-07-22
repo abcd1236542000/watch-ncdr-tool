@@ -857,7 +857,7 @@ var meta = window.__RH_MAIN('meta');
 ## 11. 交付內容 〔參考·現況〕
 
 - **`dist/rain.js`**：工具本體（壓縮後 15.5 KB）。定義 `window.__RH_MAIN`
-- **安裝說明 HTML**（7.8 KB）：載入**同層** `rain.js`，**即時產生**書籤網址與雨量對照表
+- **`index.html`**（安裝頁，7.8 KB，放根目錄供 GitHub Pages）：以 `<script src="dist/rain.js">` 載入工具，**即時產生**書籤網址與雨量對照表
 - 書籤網址（24.2 KB）不再寫死於 HTML，由安裝頁在載入時組出
 - 主機檢查：非官網執行時 `alert` 提示
 
@@ -869,7 +869,7 @@ var meta = window.__RH_MAIN('meta');
 | --- | --- |
 | `src/rain.js` | **可讀原始碼**（含註解），開發時只改這支 |
 | `dist/rain.js` | terser 壓縮產出，安裝頁載入的就是它；**由 `npm run build` 產生，勿手改** |
-| `dist/落雨小幫手_雨量查詢_安裝說明.html` | 安裝頁，**內容固定不隨版本重產**；須與 `dist/rain.js` **同層一起發佈** |
+| `index.html` | 安裝頁（**放根目錄供 GitHub Pages 部署**），**內容固定不隨版本重產**；`<script src="dist/rain.js">` 載入產物 |
 | `docs/record.md` | **本檔**，持續維護的開發紀錄簿 |
 | `docs/screenshots/` | README 使用的操作截圖 |
 | `CHANGELOG.md` | 給人快速掃視的精簡變更清單（日期式、最新在上） |
@@ -973,13 +973,13 @@ npm run build   # = npx terser@5.31.0 src/rain.js -c -m --comments false -o dist
 | --- | --- | --- |
 | 角色 | 原始碼，人看的 | 建置產物，機器載的 |
 | 誰改 | **開發時只改這支** | terser 產生，**手改會被下次 build 覆蓋** |
-| 誰載入 | 沒有人 | 安裝頁 `<script src="rain.js">`（同層） |
+| 誰載入 | 沒有人 | 根目錄安裝頁 `index.html` 以 `<script src="dist/rain.js">` 載入 |
 
 ```
 改 src/rain.js
    ↓ npm run build（npx terser）
 dist/rain.js
-   ↓ 安裝頁（同層 HTML）載入
+   ↓ 根目錄 index.html（&lt;script src=dist/rain.js&gt;）載入
 書籤網址（頁面即時組出）
 ```
 
