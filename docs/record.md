@@ -6,7 +6,8 @@
 >
 > **任何程式碼異動，都必須回頭同步更新本檔**，缺一不可：
 >
-> 0. **改 `rain.src.js`，不要改 `rain.js`**，改完務必重新 build（見 §11.3）
+> 0. **改 `src/rain.js`，不要改 `dist/rain.js`**（後者是建置產物，手改會被覆蓋）；改完務必 `npm run build`（見 §11.3）
+> 0b. **升版只改 `package.json` 的 `version`**，用 `npm version <major|minor|patch>` 自動同步 VER 與 README、重建 dist、打 tag。**不要手改 `src/rain.js` 的 `VER` 或 README 的版本號**（見 §11.5）
 > 1. §7 **變更紀錄**追加一筆（日期／版本／變更內容／狀態）
 > 2. §4 **目前狀態**同步修正（已修好的問題移除或標記 ✅）
 > 3. §8 **待辦**勾掉已完成項目
@@ -866,24 +867,28 @@ var meta = window.__RH_MAIN('meta');
 
 ## 11. 交付內容
 
-- **`rain.js`**：工具本體（壓縮後 15.5 KB）。定義 `window.__RH_MAIN`
-- **安裝說明 HTML**（7.8 KB）：載入 `rain.js`，**即時產生**書籤網址與雨量對照表
+- **`dist/rain.js`**：工具本體（壓縮後 15.5 KB）。定義 `window.__RH_MAIN`
+- **安裝說明 HTML**（7.8 KB）：載入**同層** `rain.js`，**即時產生**書籤網址與雨量對照表
 - 書籤網址（24.2 KB）不再寫死於 HTML，由安裝頁在載入時組出
 - 主機檢查：非官網執行時 `alert` 提示
 
-### 11.1 工作資料夾檔案清單
+### 11.1 專案檔案結構
 
-| 檔案 | 說明 |
+> 目錄化後（src / dist / docs 分層）。人看的完整版見 README「檔案結構」。
+
+| 路徑 | 說明 |
 | --- | --- |
-| `record.md` | **本檔**，持續維護的開發紀錄簿 |
-| `落雨小幫手_需求到實作_開發文件.md` | v1.0 開發全紀錄（歷史文件，不再更動）|
-| `rain.src.js` | **可讀原始碼**（含註解，30.3 KB），開發時改這支 |
-| `rain.js` | terser 壓縮產出（15.5 KB），安裝頁載入的就是它 |
-| `落雨小幫手_雨量查詢_安裝說明.html` | 安裝頁（7.8 KB），**內容固定，不隨版本重產** |
+| `src/rain.js` | **可讀原始碼**（含註解），開發時只改這支 |
+| `dist/rain.js` | terser 壓縮產出，安裝頁載入的就是它；**由 `npm run build` 產生，勿手改** |
+| `dist/落雨小幫手_雨量查詢_安裝說明.html` | 安裝頁，**內容固定不隨版本重產**；須與 `dist/rain.js` **同層一起發佈** |
+| `docs/record.md` | **本檔**，持續維護的開發紀錄簿 |
+| `docs/screenshots/` | README 使用的操作截圖 |
+| `scripts/version.mjs` | 版本單一來源同步腳本（見 §11.5） |
+| `package.json` | build／version 腳本與相依 |
 
-> v1.0 / v1.5 的獨立 bookmarklet 檔已移除；歷史脈絡完整保存在本檔 §7。
+> v1.0 / v1.5 的獨立 bookmarklet 檔、`落雨小幫手_需求到實作_開發文件.md` 等歷史檔已移除；脈絡完整保存在本檔 §7。
 
-### 11.2 原始碼函式索引（`rain.src.js`）
+### 11.2 原始碼函式索引（`src/rain.js`）
 
 | 函式 | 職責 | 現況 |
 | --- | --- | --- |
@@ -927,13 +932,13 @@ window.__RH_MAIN('meta') → {
 
 ### 11.3 打包方式
 
-**v1.6 起流程大幅簡化——不再需要編碼與改寫 HTML：**
+**v1.6 起流程大幅簡化——不再需要編碼與改寫 HTML；v1.7 後改由 npm script 打包（terser 經 npx 取得，免安裝）：**
 
 ```bash
-terser rain.src.js -c -m --comments false -o rain.js
+npm run build   # = npx terser@5.31.0 src/rain.js -c -m --comments false -o dist/rain.js
 ```
 
-就這樣。安裝頁載入 `rain.js` 後會自己組出 `javascript:` 網址與對照表。
+就這樣。安裝頁載入 `dist/rain.js` 後會自己組出 `javascript:` 網址與對照表。
 
 <details><summary>v1.5 以前的舊流程（已淘汰）</summary>
 
@@ -967,22 +972,47 @@ terser rain.src.js -c -m --comments false -o rain.js
 
 | 安裝頁載入 | `toString()` 長度 | 產生的書籤網址 |
 | --- | --- | --- |
-| `rain.src.js`（含註解）| 25,978 | **58,518** 字元 |
-| `rain.js`（壓縮後）| 14,762 | **24,203** 字元 |
+| `src/rain.js`（含註解）| 25,978 | **58,518** 字元 |
+| `dist/rain.js`（壓縮後）| 14,762 | **24,203** 字元 |
 
 差 2.4 倍，主因是中文註解——每個中文字經 `encodeURIComponent` 會膨脹成 9 個字元。
 註解對人有價值，塞進書籤網址則純粹是負擔。
 
-| | `rain.src.js` | `rain.js` |
+| | `src/rain.js` | `dist/rain.js` |
 | --- | --- | --- |
 | 角色 | 原始碼，人看的 | 建置產物，機器載的 |
 | 誰改 | **開發時只改這支** | terser 產生，**手改會被下次 build 覆蓋** |
-| 誰載入 | 沒有人 | 安裝頁 `<script src="rain.js">` |
+| 誰載入 | 沒有人 | 安裝頁 `<script src="rain.js">`（同層） |
 
 ```
-改 rain.src.js
-   ↓ terser rain.src.js -c -m --comments false -o rain.js
-rain.js
-   ↓ 安裝頁載入
+改 src/rain.js
+   ↓ npm run build（npx terser）
+dist/rain.js
+   ↓ 安裝頁（同層 HTML）載入
 書籤網址（頁面即時組出）
 ```
+
+### 11.5 版本號單一來源（v1.7 導入）
+
+**唯一來源 = `package.json` 的 `version`**（semver，如 `1.8.0`）。顯示版本取 `major.minor`（`1.8`）。
+
+版本字串會出現在四處，但**只需改一處**，其餘由工具同步：
+
+| 位置 | 如何取得版本 | 要手改嗎 |
+| --- | --- | --- |
+| `package.json` `version` | **唯一來源** | ✅ 只改這裡 |
+| `src/rain.js` `var VER` | `scripts/version.mjs` 寫入 | ❌ 勿手改 |
+| README「目前版本 **vX.Y**」 | `scripts/version.mjs` 寫入（精準錨定，歷史標記「(vN 新增)」不動） | ❌ 勿手改 |
+| 安裝頁 HTML | runtime 讀 `__RH_MAIN('meta').version`（= `VER`） | ❌ 免處理 |
+
+面板標題也用 `'v'+VER` 組出，不再有第二份硬編。
+
+**升版流程（一個指令）：**
+
+```bash
+npm version minor    # 1.7.0 → 1.8.0（major / patch 同理）
+```
+
+`npm version` 會：改 `package.json` → 觸發 `version` script（`node scripts/version.mjs` 同步 VER 與 README → `npm run build` 重建 dist → `git add -A`）→ 建立 commit 與 git tag。**前提：git 工作區須乾淨。**
+
+> `scripts/version.mjs` 有防呆：找不到 stamp 目標會報錯中止，不會靜默漏改。

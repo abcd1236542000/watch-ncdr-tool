@@ -4,7 +4,7 @@
 
 以 **Bookmarklet（書籤小工具）** 形式交付，注入官網頁面後即可使用，無需安裝外掛、無需外部圖資。
 
-> 目前版本 **v1.7**（表格會隨真實時間自動更新，不再是選取當下的靜態快照）。完整開發脈絡、踩雷紀錄、每輪迭代細節請見 [`record.md`](./record.md)。
+> 目前版本 **v1.7**（表格會隨真實時間自動更新，不再是選取當下的靜態快照）。完整開發脈絡、踩雷紀錄、每輪迭代細節請見 [`docs/record.md`](./docs/record.md)。
 
 ---
 
@@ -87,7 +87,7 @@
 
 ## 安裝與使用
 
-1. 用瀏覽器開啟 [`落雨小幫手_雨量查詢_安裝說明.html`](./落雨小幫手_雨量查詢_安裝說明.html)
+1. 用瀏覽器開啟 [`dist/落雨小幫手_雨量查詢_安裝說明.html`](./dist/落雨小幫手_雨量查詢_安裝說明.html)
 2. 將頁面上的書籤網址拖曳到瀏覽器書籤列
 3. 到 [watch.ncdr.nat.gov.tw/appv2](https://watch.ncdr.nat.gov.tw/appv2/) 點一下該書籤即可開啟面板
 
@@ -95,19 +95,44 @@
 
 ## 檔案結構
 
-| 檔案 | 說明 |
-| --- | --- |
-| `rain.src.js` | 可讀原始碼（含註解），**開發時只改這支** |
-| `rain.js` | terser 壓縮後的產出，安裝頁實際載入的檔案；由 `rain.src.js` build 產生，請勿手改 |
-| `落雨小幫手_雨量查詢_安裝說明.html` | 安裝頁，內容固定，書籤網址與雨量對照表由 `rain.js` 即時產生 |
-| `record.md` | 持續維護的開發紀錄簿：架構細節、踩雷紀錄、每輪迭代變更、待辦 |
-| `docs/screenshots/` | 本文件使用的操作截圖 |
+```
+watch-ncdr-tool/
+├── src/
+│   └── rain.js                         可讀原始碼（含註解），開發時只改這支
+├── dist/                               交付包（HTML 以相對路徑載入同層 rain.js，兩者需一起發佈）
+│   ├── rain.js                         terser 壓縮產出，請勿手改（由 npm run build 產生）
+│   └── 落雨小幫手_雨量查詢_安裝說明.html   安裝頁，書籤網址與雨量對照表由 rain.js 即時產生
+├── docs/
+│   ├── record.md                       持續維護的開發紀錄簿：架構、踩雷紀錄、每輪迭代、待辦
+│   └── screenshots/                    本文件使用的操作截圖
+├── package.json                        build 腳本與相依（terser）
+├── LICENSE
+└── README.md
+```
 
-修改後重新打包：
+## 開發與發版流程
+
+> 只有兩條規則要記：**只改 `src/rain.js`、絕不手改 `dist/`**；**升版只改 `package.json`、用 `npm version`**。
+
+**1. 改程式 → 打包**
+
+修改 `src/rain.js` 後重新打包（產出覆蓋 `dist/rain.js`，terser 由 npx 即時取得，免安裝）：
 
 ```bash
-terser rain.src.js -c -m --comments false -o rain.js
+npm run build
 ```
+
+`dist/rain.js` 是建置產物，**請勿手改**——下次 build 會覆蓋。安裝頁 HTML 以相對路徑 `<script src="rain.js">` 載入，因此 `dist/rain.js` 與 HTML **必須同層一起發佈**。
+
+**2. 升版（版本號單一來源）**
+
+版本號的唯一來源是 `package.json` 的 `version`。升版只用一個指令，會自動同步 `src/rain.js` 的 `VER`、README 版本標示、重建 `dist/`、並建立 commit 與 git tag：
+
+```bash
+npm version minor    # 1.7.0 → 1.8.0（major / patch 同理；需先 commit 使 git 工作區乾淨）
+```
+
+安裝頁 HTML 的版本、雨量對照表等由 `dist/rain.js` 於執行時 (`__RH_MAIN('meta')`) 即時產生，**不需手動同步**。細節見 [`docs/record.md`](./docs/record.md) §11.5。
 
 ## 已知限制
 
@@ -115,4 +140,11 @@ terser rain.src.js -c -m --comments false -o rain.js
 - 等級取鄉鎮內最大值，單一強降雨像素即可拉高整格等級（可搭配「覆蓋率」欄位佐證）
 - 縣市／鄉鎮清單依賴官網 SVG 結構，官網若改版需同步調整工具
 
-更多細節、每個 bug 的根因與修法，見 [`record.md`](./record.md)。
+更多細節、每個 bug 的根因與修法，見 [`docs/record.md`](./docs/record.md)。
+
+## 資料來源與授權
+
+- **程式碼**：本專案程式碼（`src/`、`dist/` 內由其產生的檔案）以 [MIT 授權](./LICENSE) 釋出。
+- **雨量／雷達影像資料**：版權屬 [NCDR 國家災害防救科技中心](https://watch.ncdr.nat.gov.tw/appv2/)。本工具僅於**執行時**由使用者瀏覽器即時向 NCDR 讀取影像，**未包含、未散布**任何官方資料；本 repo 不含任何 NCDR 圖資。
+- 使用本工具時請遵守 [NCDR 網站的使用規範](https://watch.ncdr.nat.gov.tw/)，並保留資料來源標示。
+- 雨量等級為顏色判讀之推估值，**非官方數值，僅供參考**，請以中央氣象署／NCDR 官方發布為準。

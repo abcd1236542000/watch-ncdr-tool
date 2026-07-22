@@ -1,0 +1,11 @@
+{
+  "name": "watch-ncdr-tool",
+  "version": "1.7.0",
+  "description": "落雨小幫手 · 雨量查詢 — 把 NCDR 官網雨量雲圖轉成單一鄉鎮的時間 × 雨量等級表格的 Bookmarklet 工具",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "build": "npx -y terser@5.31.0 src/rain.js -c -m --comments false -o dist/rain.js",
+    "version": "node scripts/version.mjs && npm run build && git add -A"
+  }
+}
