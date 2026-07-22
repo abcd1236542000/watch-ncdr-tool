@@ -38,9 +38,24 @@ window.__RH_MAIN = function(__mode){
        - 支援 __RH_MAIN('meta')：不執行工具，只回傳版本 / 色盤 / 等級 / 說明常數，
          供安裝頁自動產生對照表 → 文件與程式碼永遠不會不同步
 
+     v1.7 新增（自動更新）：
+       - 選定鄉鎮後表格會**跟著真實時間自動前進**，不再是選取當下的靜態快照。
+         驅動器（DRIVE_TICK 常駐定時器）分兩種更新：
+         (a) 輕量重繪：每個 tick 用最後一次取樣結果 + 當下時間重畫表格，
+             讓黃底「現在」列下移、實況/預報分隔線前進、摘要倒數，**完全不連網**。
+         (b) 完整重查：跨過 10 分鐘整點窗口邊界即重跑 runQuery，補進官網新影像、
+             整個時間窗往前滑一格。舊格子命中 sampleCache，只有新格子會下載。
+       - **對齊官網週期 + 遲發重試**：官網每 10 分鐘才更新，且發佈常晚於整點。
+         邊界剛到就抓可能撲空，故 winKey 一變就進入重查，若最新格時間沒前進
+         （官網尚未發佈）就於後續 tick 內重試，抓到才把 updWindowKey 推進到本窗口；
+         連試 MAXRETRY 次仍無新影像則放棄本輪，等下一個 10 分鐘窗口。
+       - **隱藏即停、重開恢復**：driver 先檢查面板 display，按 ✕ 隱藏時直接跳過所有
+         連網與運算；面板重新顯示（重點書籤）時 winKey 已過期 → 下一個 tick 自動補查
+         追上進度。不需跨執行實例傳遞狀態。
+
      詳見 record.md */
 
-  var VER='1.6';
+  var VER='1.7';
   /* [v1.3] 版本感知的重入保護。
      ⚠️ v1.2 以前只檢查 __RH_ACTIVE：若頁面上已有舊版在跑，
         點新版書籤只會把「舊版面板」重新顯示出來，新版永遠載不進去，
@@ -423,7 +438,7 @@ window.__RH_MAIN = function(__mode){
     +'.rhchip0{background:#39414f;color:#94a2b6;font-weight:normal}';
   document.head.appendChild(css);
   var p=document.createElement('div');p.id='rhpanel';
-  p.innerHTML='<div id="rhbar"><span>🌧️ 落雨小幫手 · 雨量查詢 <span style="font-weight:normal;opacity:.7">v1.5</span></span><span id="rhclose">✕</span></div><div id="rhbody"><div>縣市 <select id="rhco"></select></div><div>鄉鎮 <select id="rhtw"></select></div><button id="rhpick">或：點地圖選點</button><div id="rhstatus">請選擇地區</div><div id="rhsum"></div><div id="rhwarn"></div><table id="rhresult"></table></div>';
+  p.innerHTML='<div id="rhbar"><span>🌧️ 落雨小幫手 · 雨量查詢 <span style="font-weight:normal;opacity:.7">v1.7</span></span><span id="rhclose">✕</span></div><div id="rhbody"><div>縣市 <select id="rhco"></select></div><div>鄉鎮 <select id="rhtw"></select></div><button id="rhpick">或：點地圖選點</button><div id="rhstatus">請選擇地區</div><div id="rhsum"></div><div id="rhwarn"></div><table id="rhresult"></table></div>';
   document.body.appendChild(p);
   (function(){var bar=document.getElementById('rhbar'),dx,dy,drag=false;
    bar.onmousedown=function(e){if(e.target.id==='rhclose')return;drag=true;dx=e.clientX-p.offsetLeft;dy=e.clientY-p.offsetTop;e.preventDefault();};
@@ -443,6 +458,16 @@ window.__RH_MAIN = function(__mode){
 
   /* ---------- [v1.1 P0-3] 紅框：自建 overlay，由經緯度反推螢幕座標 ---------- */
   var curIdx=-1, overlay=null, lastSig='';
+  /* [v1.7] 自動更新狀態。
+     curMk/curLabel：目前鄉鎮的取樣遮罩與標籤，供 driver 重查時復用。
+     lastRender：最後一次完整查詢的結果，供輕量重繪（不連網）復用。
+     updWindowKey：已完成完整重查的 10 分鐘窗口鍵（floor(ms/600000)）。
+     lastLatestT：該次重查看到的最新格時間(ms)，用來判斷官網是否已發佈新影像。
+     updRetry：邊界後等待官網新影像的重試次數；updBusy：避免重查疊發。 */
+  var curMk=null, curLabel='', lastRender=null;
+  var updWindowKey=-1, lastLatestT=0, updRetry=0, updBusy=false;
+  var DRIVE_TICK=30000, MAXRETRY=5;
+  function winKey(ms){return Math.floor(ms/600000);}
   function ensureOverlay(){
     if(overlay&&overlay.parentNode) return overlay;
     overlay=document.createElementNS(SVGNS,'svg');
@@ -497,15 +522,24 @@ window.__RH_MAIN = function(__mode){
     /* [v1.3] 改以整個鄉鎮多邊形取樣，不再用重心方形視窗 */
     var mk=townMask(idx);
     if(!mk){document.getElementById('rhstatus').textContent='無法建立此鄉鎮的取樣範圍';return;}
-    runQuery(mk,idx,d.COUNTYNAME+d.TOWNNAME);
+    /* [v1.7] 記住目前鄉鎮並重置自動更新狀態：把 updWindowKey 設為當下窗口，
+       避免剛查完下一個 tick 又立刻重查；lastLatestT 由本次查詢結果回填。 */
+    curMk=mk; curLabel=d.COUNTYNAME+d.TOWNNAME;
+    updWindowKey=winKey(Date.now()); updRetry=0; lastLatestT=0; lastRender=null;
+    runQuery(mk,idx,curLabel).then(function(latest){ if(latest!=null) lastLatestT=latest; });
   }
 
-  function runQuery(mk,idx,label){
-    document.getElementById('rhstatus').textContent='查詢 '+label+'（範圍 '+mk.inside+' 像素）…';
-    document.getElementById('rhwarn').textContent='';
-    document.getElementById('rhsum').textContent='';
-    document.getElementById('rhresult').innerHTML='';
-    fetchRows().then(function(rows){
+  /* [v1.7] silent=true 為背景自動重查：不清空表格、不顯示「查詢…」進度，
+     讓舊表格一直留在畫面上，直到新結果 render 時原子替換，避免每 10 分鐘閃爍。
+     回傳 Promise，resolve 為本次最新一格的時間(ms)，null 表示取不到清單。 */
+  function runQuery(mk,idx,label,silent){
+    if(!silent){
+      document.getElementById('rhstatus').textContent='查詢 '+label+'（範圍 '+mk.inside+' 像素）…';
+      document.getElementById('rhwarn').textContent='';
+      document.getElementById('rhsum').textContent='';
+      document.getElementById('rhresult').innerHTML='';
+    }
+    return fetchRows().then(function(rows){
       var tasks=[];
       rows.forEach(function(c){
         var raw=(c[2]||'').replace(/^"|"$/g,'');
@@ -517,24 +551,54 @@ window.__RH_MAIN = function(__mode){
         var t=parseTime(raw);
         if(t)tasks.push({rain:rainUrl,dbz:dbzUrl,t:t});
       });
-      if(!tasks.length){document.getElementById('rhstatus').textContent='無法取得雷達影像清單';return;}
+      if(!tasks.length){if(!silent)document.getElementById('rhstatus').textContent='無法取得雷達影像清單';return null;}
       tasks.sort(function(a,b){return a.t-b.t;});
       /* [v1.2] 改為並行載入（原為 16 張串行） */
       var t0=Date.now();
-      runPool(tasks,function(tk){
+      return runPool(tasks,function(tk){
         return sampleImage(tk.rain,tk.dbz,mk,idx).then(function(o){
           return {t:tk.t,s:o.s,fallback:o.fallback};
         });
-      },function(done,total){
+      },silent?null:function(done,total){
         document.getElementById('rhstatus').textContent='查詢 '+label+' … '+done+'/'+total;
       }).then(function(out){
         var results=[],fellBack=0;
         out.forEach(function(o){ if(!o)return; if(o.fallback)fellBack++; results.push({t:o.t,s:o.s}); });
         results.sort(function(a,b){return a.t-b.t;});
+        /* [v1.7] 存下結果供輕量重繪（每個 tick 用當下時間重畫「現在」列，不連網） */
+        lastRender={results:results,label:label,fellBack:fellBack,total:tasks.length,elapsed:Date.now()-t0};
         render(results,label,fellBack,tasks.length,Date.now()-t0);
+        return results.length?results[results.length-1].t.getTime():0;
       });
     });
   }
+  /* [v1.7] 輕量重繪：不連網，只用最後一次結果 + 當下時間重畫，
+     讓黃底「現在」列、實況/預報分隔線、摘要倒數隨真實時間前進。 */
+  function renderStored(){
+    if(!lastRender)return;
+    render(lastRender.results,lastRender.label,lastRender.fellBack,lastRender.total,lastRender.elapsed);
+  }
+  /* [v1.7] 自動更新驅動器：常駐定時器，面板隱藏或未選鄉鎮時完全跳過。 */
+  setInterval(function(){
+    if(curIdx<0||!curMk) return;
+    if(p.style.display==='none') return;           /* 隱藏即停，重開自動恢復 */
+    var wk=winKey(Date.now());
+    if(wk===updWindowKey){ renderStored(); return; } /* 同窗口：只輕量重繪 */
+    /* 跨過 10 分鐘窗口邊界 → 完整重查（背景 silent，不閃爍） */
+    if(updBusy) return;
+    updBusy=true;
+    listCacheAt=0;                                 /* 強制重抓清單，讓遲發重試每次真的問官網 */
+    runQuery(curMk,curIdx,curLabel,true).then(function(latest){
+      updBusy=false;
+      if(latest==null) return;                     /* 取不到清單，下個 tick 再試 */
+      if(latest>lastLatestT){                       /* 官網已發佈新影像 */
+        lastLatestT=latest; updWindowKey=wk; updRetry=0;
+      }else{                                        /* 官網尚未發佈，稍後重試 */
+        updRetry++;
+        if(updRetry>=MAXRETRY){ updWindowKey=wk; updRetry=0; } /* 放棄本輪，等下個窗口 */
+      }
+    },function(){updBusy=false;});
+  },DRIVE_TICK);
 
   function render(results,label,fellBack,total,elapsed){
     var now=Date.now();
