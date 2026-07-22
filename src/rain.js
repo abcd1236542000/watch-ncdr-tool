@@ -55,7 +55,7 @@ window.__RH_MAIN = function(__mode){
 
      詳見 record.md */
 
-  var VER='1.7';
+  var VER='__BUILD_ID__';  /* build 時由 scripts/build.mjs 蓋成當天日期，勿手填 */
   /* [v1.3] 版本感知的重入保護。
      ⚠️ v1.2 以前只檢查 __RH_ACTIVE：若頁面上已有舊版在跑，
         點新版書籤只會把「舊版面板」重新顯示出來，新版永遠載不進去，
@@ -438,7 +438,7 @@ window.__RH_MAIN = function(__mode){
     +'.rhchip0{background:#39414f;color:#94a2b6;font-weight:normal}';
   document.head.appendChild(css);
   var p=document.createElement('div');p.id='rhpanel';
-  p.innerHTML='<div id="rhbar"><span>🌧️ 落雨小幫手 · 雨量查詢 <span style="font-weight:normal;opacity:.7">v'+VER+'</span></span><span id="rhclose">✕</span></div><div id="rhbody"><div>縣市 <select id="rhco"></select></div><div>鄉鎮 <select id="rhtw"></select></div><button id="rhpick">或：點地圖選點</button><div id="rhstatus">請選擇地區</div><div id="rhsum"></div><div id="rhwarn"></div><table id="rhresult"></table></div>';
+  p.innerHTML='<div id="rhbar"><span>🌧️ 落雨小幫手 · 雨量查詢 <span style="font-weight:normal;opacity:.7">更新 '+VER+'</span></span><span id="rhclose">✕</span></div><div id="rhbody"><div>縣市 <select id="rhco"></select></div><div>鄉鎮 <select id="rhtw"></select></div><button id="rhpick">或：點地圖選點</button><div id="rhstatus">請選擇地區</div><div id="rhsum"></div><div id="rhwarn"></div><table id="rhresult"></table></div>';
   document.body.appendChild(p);
   (function(){var bar=document.getElementById('rhbar'),dx,dy,drag=false;
    bar.onmousedown=function(e){if(e.target.id==='rhclose')return;drag=true;dx=e.clientX-p.offsetLeft;dy=e.clientY-p.offsetTop;e.preventDefault();};

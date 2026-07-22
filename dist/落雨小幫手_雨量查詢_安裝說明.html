@@ -101,11 +101,11 @@ footer{margin-top:34px;color:#888;font-size:12.5px;border-top:1px solid #e2e2e2;
   document.getElementById('bmLink').href  = code;
   document.getElementById('bmText').value = code;
 
-  document.getElementById('verLabel').textContent = 'v' + meta.version;
+  document.getElementById('verLabel').textContent = '更新 ' + meta.version;
   document.getElementById('nFrames').textContent  = meta.notes.frames;
   document.getElementById('upgradeTip').innerHTML =
-    '本頁書籤為 <b>v' + meta.version + '</b>。升級後請<b>重新拖曳一次</b>並刪除舊書籤；' +
-    '面板標題列會顯示版本號，可據此確認是否已更新。';
+    '本頁書籤更新日期 <b>' + meta.version + '</b>。升級後請<b>重新拖曳一次</b>並刪除舊書籤；' +
+    '面板標題列會顯示更新日期，可據此確認是否已更新。';
   document.getElementById('usageNotes').innerHTML =
     meta.notes.obsVsFcst + '；接近現在的時段以淡黃色底標示。首次查詢' +
     meta.notes.querySeconds + '，同一鄉鎮重查會更快。';

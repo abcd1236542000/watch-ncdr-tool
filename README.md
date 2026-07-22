@@ -4,7 +4,7 @@
 
 以 **Bookmarklet（書籤小工具）** 形式交付，注入官網頁面後即可使用，無需安裝外掛、無需外部圖資。
 
-> 目前版本 **v1.7**（表格會隨真實時間自動更新，不再是選取當下的靜態快照）。完整開發脈絡、踩雷紀錄、每輪迭代細節請見 [`docs/record.md`](./docs/record.md)。
+> 本工具不維護版本號，面板與安裝頁顯示的是 build 當天日期。最近變更見 [`CHANGELOG.md`](./CHANGELOG.md)；完整開發脈絡、踩雷紀錄、每輪迭代細節請見 [`docs/record.md`](./docs/record.md)。
 
 ---
 
@@ -105,18 +105,29 @@ watch-ncdr-tool/
 ├── docs/
 │   ├── record.md                       持續維護的開發紀錄簿：架構、踩雷紀錄、每輪迭代、待辦
 │   └── screenshots/                    本文件使用的操作截圖
-├── package.json                        build 腳本與相依（terser）
+├── scripts/
+│   └── build.mjs                       建置：terser 壓縮 + 蓋當天日期建置識別碼
+├── .githooks/
+│   └── pre-commit                      門禁：src 改了但 dist 沒重編就擋 commit
+├── package.json                        build 腳本（terser 由 npx 取得）
+├── CHANGELOG.md                        精簡變更清單（日期式，最新在上）
 ├── LICENSE
 └── README.md
 ```
 
-## 開發與發版流程
+## 開發流程
 
-> 只有兩條規則要記：**只改 `src/rain.js`、絕不手改 `dist/`**；**升版只改 `package.json`、用 `npm version`**。
+> 三條規則：**只改 `src/rain.js`、絕不手改 `dist/`**；**改完 `npm run build`**；**不管版本號，變更記到 `CHANGELOG.md`**。
 
-**1. 改程式 → 打包**
+**前置（每台機器一次性）**：啟用隨 repo 走的 pre-commit 門禁
 
-修改 `src/rain.js` 後重新打包（產出覆蓋 `dist/rain.js`，terser 由 npx 即時取得，免安裝）：
+```bash
+git config core.hooksPath .githooks
+```
+
+**改程式 → 打包**
+
+修改 `src/rain.js` 後重新打包（terser 由 npx 即時取得免安裝，並自動把當天日期蓋成建置識別碼）：
 
 ```bash
 npm run build
@@ -124,15 +135,11 @@ npm run build
 
 `dist/rain.js` 是建置產物，**請勿手改**——下次 build 會覆蓋。安裝頁 HTML 以相對路徑 `<script src="rain.js">` 載入，因此 `dist/rain.js` 與 HTML **必須同層一起發佈**。
 
-**2. 升版（版本號單一來源）**
+**記錄變更（取代升版）**
 
-版本號的唯一來源是 `package.json` 的 `version`。升版只用一個指令，會自動同步 `src/rain.js` 的 `VER`、README 版本標示、重建 `dist/`、並建立 commit 與 git tag：
+本工具**不維護版本號**：面板與安裝頁顯示的是 build 當天日期（建置識別碼），由 `scripts/build.mjs` 自動蓋，無需人工。改完後在 [`CHANGELOG.md`](./CHANGELOG.md) 最上方加一列（日期＋一句摘要）即可。
 
-```bash
-npm version minor    # 1.7.0 → 1.8.0（major / patch 同理；需先 commit 使 git 工作區乾淨）
-```
-
-安裝頁 HTML 的版本、雨量對照表等由 `dist/rain.js` 於執行時 (`__RH_MAIN('meta')`) 即時產生，**不需手動同步**。細節見 [`docs/record.md`](./docs/record.md) §11.5。
+pre-commit 門禁只擋一件事：改了 `src/rain.js` 卻忘了 build＋stage `dist/rain.js`。安裝頁的顯示日期、雨量對照表等由 `dist/rain.js` 執行時 (`__RH_MAIN('meta')`) 即時產生，**不需手動同步**。
 
 ## 已知限制
 

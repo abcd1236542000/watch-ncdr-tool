@@ -1,0 +1,29 @@
+#!/bin/sh
+# 落雨小幫手 pre-commit 門禁（可攜：隨 repo 走）
+# 啟用方式（每台機器一次性）：git config core.hooksPath .githooks
+#
+# 唯一硬擋：改了 src/rain.js 卻沒一起 build+stage dist/rain.js
+#   → 避免安裝頁載到舊碼。其餘只提醒不擋。
+
+staged=$(git diff --cached --name-only)
+
+echo "$staged" | grep -q '^src/rain\.js$'
+src_changed=$?
+
+echo "$staged" | grep -q '^dist/rain\.js$'
+dist_changed=$?
+
+# 硬擋：src 有改、dist 沒跟上
+if [ "$src_changed" -eq 0 ] && [ "$dist_changed" -ne 0 ]; then
+  echo "✗ 擋下 commit：src/rain.js 有變更但 dist/rain.js 未重編。" >&2
+  echo "  請執行：npm run build && git add dist/rain.js" >&2
+  exit 1
+fi
+
+# 提醒（不擋）：改了 src 但沒動 CHANGELOG
+if [ "$src_changed" -eq 0 ]; then
+  echo "$staged" | grep -q '^CHANGELOG\.md$' || \
+    echo "· 提醒：src/rain.js 有變更，記得在 CHANGELOG.md 加一列（日期＋摘要）。" >&2
+fi
+
+exit 0
