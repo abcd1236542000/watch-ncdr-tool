@@ -66,6 +66,7 @@ footer{margin-top:34px;color:#888;font-size:12.5px;border-top:1px solid #e2e2e2;
 <li>點一下書籤列上的「<b>落雨小幫手雨量查詢</b>」書籤，右上角會出現查詢面板。</li>
 <li>用<b>縣市 → 鄉鎮</b>下拉選單選地區；<b>或</b>按「<b>點地圖選點</b>」再點地圖上任一位置。</li>
 <li>你選到的鄉鎮會在地圖上以<b>紅色外框</b>標示，下方表格列出各時段的雨量等級。</li>
+<li id="villStep"></li>
 </ol>
 <div class="tip" id="usageNotes"></div>
 </div>
@@ -83,7 +84,10 @@ footer{margin-top:34px;color:#888;font-size:12.5px;border-top:1px solid #e2e2e2;
 • 資料來源為 NCDR 官方即時雷達，雨量等級由圖上顏色判讀換算，<b>非官方數值，僅供參考</b>。<br>
 • 若面板消失，再點一次書籤即可重新開啟。</div>
 
-<footer>落雨小幫手雨量查詢工具 · 資料來源：國家災害防救科技中心 (NCDR)<br>
+<footer>落雨小幫手雨量查詢工具<br>
+雨量／雷達影像來源：國家災害防救科技中心 (NCDR)<br>
+村里邊界圖資來源：內政部國土測繪中心「村里界圖」（政府資料開放平台
+<a href="https://data.gov.tw/dataset/7438">dataset 7438</a>，依政府資料開放授權條款使用）<br>
 本頁的版本、對照表與說明皆由 <code>rain.js</code> 自動產生，升級時只需替換該檔案。</footer>
 
 <script>
@@ -110,7 +114,14 @@ footer{margin-top:34px;color:#888;font-size:12.5px;border-top:1px solid #e2e2e2;
     meta.notes.obsVsFcst + '；接近現在的時段以淡黃色底標示。首次查詢' +
     meta.notes.querySeconds + '，同一鄉鎮重查會更快。';
   document.getElementById('palNotes').innerHTML =
-    meta.notes.coverage + '。<br>' + meta.notes.peak + '。';
+    meta.notes.coverage + '。<br>' + meta.notes.peak + '。' +
+    (meta.notes.resolution ? '<br>' + meta.notes.resolution + '。' : '');
+  // 「村里」說明：文案來自 rain.js 的 meta，本頁只提供容器
+  [['villStep', meta.notes.village]].forEach(function (p) {
+    var el = document.getElementById(p[0]);
+    if (p[1]) el.innerHTML = p[1] + '。';
+    else el.style.display = 'none';
+  });
 
   function lum(r,g,b){
     function f(v){v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);}

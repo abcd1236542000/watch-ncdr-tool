@@ -7,3 +7,8 @@ npm-debug.log*
 
 # 本機工具設定（Claude Code 等）
 .claude/settings.local.json
+
+# 本機測試用：DevTools Local Overrides 的映射資料夾
+# （把 data/vill/ 複製成 cdn.jsdelivr.net/... 的路徑，讓本機檔案冒充 jsDelivr 回應，
+#   這樣不必 push 就能測真實的村里載入路徑。用法見 docs/record.md §13.10）
+.overrides/

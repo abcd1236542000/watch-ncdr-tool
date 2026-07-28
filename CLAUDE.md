@@ -4,7 +4,11 @@
 
 ## 這是什麼
 
-「落雨小幫手」——一支 **Bookmarklet**，注入 NCDR 官網（`watch.ncdr.nat.gov.tw/appv2/`）後，把雨量雲圖轉成單一鄉鎮的「時間 × 雨量等級」表格。純前端、單檔、無後端、無外部圖資。
+「落雨小幫手」——一支 **Bookmarklet**，注入 NCDR 官網（`watch.ncdr.nat.gov.tw/appv2/`）後，把雨量雲圖轉成「時間 × 雨量等級」表格。取樣範圍**跟著行政區**：選到鄉鎮就算整個鄉鎮，選到村里就算那個村里。純前端、無後端。
+
+> 曾有「點位半徑圓」取樣（v1.8），因與村里選擇語意重疊，已於 v1.10 移除；設計與復原依據見 `record.md` §12、決策見 §7.11。**不要在沒讀過那兩節前重新加回來。**
+
+**工具本體仍是單檔且無外部相依**；唯一例外是 **v1.9 的村里功能**——官網沒有村里圖層，故圖資自備放在 `data/vill/`，執行時經 jsDelivr 按需載入（官網 CSP 只放行 jsDelivr／unpkg，`fetch` 外部網域會被擋，見 `record.md` §2.10）。載入失敗只停用村里下拉，其餘功能不受影響。
 
 ## 檔案角色（先搞懂再動手）
 
@@ -15,7 +19,9 @@
 | `index.html` | 安裝頁（放根目錄供 GitHub Pages 部署）；`<script src="dist/rain.js">` 載入 | 內容固定，改版只換 `dist/rain.js` |
 | `docs/record.md` | 開發紀錄簿：架構、踩雷、每輪變更、待辦 | ✅ 每次異動必同步（見該檔頂部「維護鐵則」） |
 | `CHANGELOG.md` | 給人快速掃視的精簡變更清單（日期式、一列一筆） | ✅ 每次異動加一列 |
+| `data/vill/<版本>/` | 村里圖資（`index.js` + 368 個 `<TOWNCODE>.js`），jsDelivr 按需載入 | ❌ `npm run build:vill` 產生 |
 | `scripts/build.mjs` | build：terser 壓縮 + 蓋當天日期建置識別碼 | 一般不用動 |
+| `scripts/build-vill.mjs` | 村里圖資管線：下載政府開放資料 → mapshaper 簡化切檔 → 包 JS | 換圖資版本才動 |
 | `.githooks/pre-commit` | 門禁：src 改了但 dist 沒重編就擋 commit | 一般不用動 |
 
 ## 鐵則
@@ -25,10 +31,16 @@
 3. **任何程式碼異動都要回頭更新 `docs/record.md`**（變更紀錄、現況、待辦），這是本專案的接手依據；`docs/record.md` 是歷史(§6,7)＋外部系統參考(§2)，規則勿複製回去。
 4. 面板／安裝頁顯示的是 build 當天日期（建置識別碼），不是版本號；HTML 的顯示字樣／對照表由 `dist/rain.js` 執行時 `__RH_MAIN('meta')` 即時產生，勿另外硬編。
 5. 面板／判讀依賴官網 SVG 圖層與雷達 PNG 命名規則，**官網改版可能整支失效**——動到互動方式時先核對 `record.md` §2「架構特性」。
+6. **村里圖資只能用 `<script>` 載**（官網 CSP 擋外部 `fetch`，白名單只有 jsDelivr／unpkg 等）。
+   - **要讓真實使用者能用** → 圖資必須放在白名單上的公開網域（push 到公開 repo 經 jsDelivr／發 npm 經 unpkg）。`http://localhost` 永遠不在白名單。
+   - **開發測試不必 push** → 用 DevTools Local Overrides（CSP 只看請求 URL，回應可換成本機檔案），或直接注入 `window.__RH_VILL_IDX`／`window.__RH_VILL[code]`（載入函式會先看 `window`，這是設計好的合法路徑）。步驟見 `record.md` §13.10。
+   - 動到村里功能前先讀 `record.md` §13；換圖資版本要同步改 `src/rain.js` 的 `VILL_VER` 與 `scripts/build-vill.mjs` 的 `VER`。
+7. **非同步查詢一定要帶世代（`queryGen`）**：UI 能在前一次查詢完成前再次觸發，舊結果會覆蓋新選擇。踩過兩次，見 `record.md` §6.14。
 
 ## 常用指令
 
 ```bash
 npm run build        # 由 src/rain.js 產生 dist/rain.js（terser 壓縮 + 蓋當天日期）
+npm run build:vill   # 產生 data/vill/<版本>/（已存在則略過；加 -- --force 重跑）
 git config core.hooksPath .githooks   # 每台機器一次性：啟用 pre-commit 門禁
 ```

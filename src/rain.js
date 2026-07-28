@@ -53,7 +53,48 @@ window.__RH_MAIN = function(__mode){
          連網與運算；面板重新顯示（重點書籤）時 winKey 已過期 → 下一個 tick 自動補查
          追上進度。不需跨執行實例傳遞狀態。
 
-     詳見 record.md */
+     v1.8 新增（取樣範圍可縮小）：
+       - 問題：以「整個鄉鎮」為分母時，大面積鄉鎮的覆蓋% 會被稀釋。
+         實測屏東縣獅子鄉約 300 km²（≈6,150 個雷達像素），「覆蓋 1%」代表約 3 km²
+         的雨區——可能整場雨都落在鄉的另一角，對「我這裡會不會下雨」沒有參考價值。
+       - 官網只有鄉鎮界圖層（properties 僅 COUNTYNAME/TOWNNAME，無村里），
+         故不改用行政區細分，而是加入**點位半徑圓**取樣：0.5／1／2／5 km。
+         半徑 1 km ≈ 3.14 km² ≈ 64 個雷達像素，分母比全鄉小近 100 倍。
+       - 遮罩建立抽成 buildMask()，鄉鎮多邊形與半徑圓共用；圓在像素空間是橢圓
+         （雷達圖為等經緯度網格；此段功能 v1.10 已整組移除，設計見 record.md §12）。
+       - 判讀快取 key 由「鄉鎮索引」改為「遮罩身分字串 curKey」，
+         ⚠️ 這是必須的：否則切換半徑會拿到上一個範圍的結果（靜默的錯答案）。
+       - 面板狀態列顯示該範圍等效幾個「雷達格」，讓樣本量透明化。
+
+     v1.9 新增（村里取樣）：
+       - v1.8 的半徑圓縮小了範圍，但**沒讓使用者指定是哪一塊**：用下拉選單時圓心是
+         鄉鎮質心（程式自動決定），要指定「A 村還是 B 村」只能去點地圖，而地圖上
+         看不出村里界。使用者實測後回報：「同一個鄉裡面的村里可能差很遠，
+         A 豪大雨、B 小雨或無雨。」
+       - 故新增第三層「村里」下拉。官網沒有村里圖層，圖資自備：
+         內政部村里界圖（政府開放資料）經 scripts/build-vill.mjs 處理成
+         data/vill/<VILL_VER>/<TOWNCODE>.js，由 jsDelivr 按需載入（平均 10.7 KB）。
+       - ⚠️ 只能用 <script> 載，不能 fetch：官網 CSP 的 connect-src 不含外部網域，
+         script-src-elem 白名單才有 cdn.jsdelivr.net（見 record.md §2.10）。
+       - ⚠️ 官網用「台」、政府圖資用「臺」→ normName() 正規化後才對得上
+         （實測官網 367 個鄉鎮全數命中，見 record.md §13.1）。
+       - 遮罩層再抽一層 polyMask(polys,key)，鄉鎮與村里共用
+         （當時還有 polyCenter(mk,key) 供半徑圓取圓心，v1.10 隨半徑功能移除）。
+       - **村里圖資載入失敗一律降級**：只有村里下拉停用，鄉鎮／半徑功能完全不受影響。
+
+     v1.10 移除（簡化取樣範圍）：
+       - **移除「範圍」下拉與整組半徑圓功能**（v1.8 的 circleMask／圓心／黃色圓圈）。
+         取樣範圍改成單純跟著行政區：選到鄉鎮就算整個鄉鎮，選到村里就算那個村里。
+       - 動機：v1.9 的村里下拉上線後，「村里」與「範圍→整個村里」是重複表達，
+         還得靠「選村里自動把範圍切過去」的隱性行為掩蓋，UI 概念多餘。
+       - ⚠️ 這是使用者明確決定的取捨，代價已知並保留在文件：
+         (a) 山區大村仍然很大（實測獅子鄉內獅村 81.8 km²，比原本半徑 5 km 的圓還大），
+             這些地方失去再細分的能力；
+         (b) 村里圖資載入失敗時只能退回整個鄉鎮，沒有零依賴的替代範圍。
+         若日後要復原，v1.8 的完整設計仍在 record.md §12。
+
+     設計文件見 record.md §12（半徑，v1.10 已移除）、§13（村里）；
+     實作明細見 §7.9、§7.10、§7.11 */
 
   var VER='__BUILD_ID__';  /* build 時由 scripts/build.mjs 蓋成當天日期，勿手填 */
   /* [v1.3] 版本感知的重入保護。
@@ -145,6 +186,18 @@ window.__RH_MAIN = function(__mode){
   }
   var LV=[{n:'無雨'},{n:'零星/毛雨'},{n:'小雨'},{n:'中雨'},{n:'大雨'},{n:'豪雨'}];
 
+  /* ---------- [v1.9] 村里圖資（唯一的外部相依） ---------- */
+  /* VILL_VER = 政府圖資版本（民國年月日），同時是 data/vill/<VER>/ 的路徑。
+     換圖資：重跑 npm run build:vill 後改這裡。路徑帶版本號的用意是
+     繞過 jsDelivr 對 @main 的快取，也讓舊版仍可用。 */
+  var VILL_VER='1150624';
+  var VILL_SRC='https://cdn.jsdelivr.net/gh/abcd1236542000/watch-ncdr-tool@main/data/vill/';
+  /* 允許以 window.__RH_VILL_BASE 覆寫，供本機測試指向其他來源 */
+  var VILL_BASE=window.__RH_VILL_BASE||(VILL_SRC+VILL_VER+'/');
+  var VILL_TIMEOUT=8000;
+  /* 官網 SVG 用「台南市」，政府圖資用「臺南市」；一律正規化成官網那一套。 */
+  function normName(s){return String(s||'').replace(/臺/g,'台');}
+
   /* [v1.6] 對外中繼資料：安裝說明頁呼叫 __RH_MAIN('meta') 取得，
      用來自動產生雨量等級對照表與版本字樣。
      ⚠️ 這裡回傳的就是工具自己在用的 PAL / LV，不是另外維護的副本，
@@ -159,8 +212,20 @@ window.__RH_MAIN = function(__mode){
         querySeconds: '約 1 秒',
         frames: '過去觀測 + 未來預報共 16 格，每格 10 分鐘',
         obsVsFcst: '表格「類型」欄依實際時間標示實況／預報，兩段之間有分隔線',
-        coverage: '「覆蓋」為該鄉鎮多邊形範圍內有雨的面積比例',
-        peak: '「峰值」為該鄉鎮範圍內最強色帶，主等級則取面積最大的色帶'
+        coverage: '「覆蓋」為取樣範圍（所選鄉鎮或村里）內有雨的面積比例',
+        peak: '「峰值」為取樣範圍內最強色帶，主等級則取面積最大的色帶',
+        /* [v1.8] 解析度說明；[v1.10] 改以村里／鄉鎮為例，半徑功能已移除 */
+        resolution: '雷達影像 1 像素約 0.21×0.23 km（≈0.05 km²）：'
+          + '一個村里大約數百到一千多個像素，整個鄉鎮可達數千個'
+          + '（實測屏東縣獅子鄉全鄉 6,374 個、其中楓林村 225 個）。'
+          + '面板狀態列會顯示目前範圍等效幾個雷達格，範圍越小、覆蓋% 的刻度越粗',
+        /* [v1.9] 村里功能與其外部相依，安裝頁需照實告知使用者 */
+        village: '選完鄉鎮可再選「村里」，直接以該村里的實際邊界統計'
+          + '（同一個鄉裡的兩個村，常常一邊在下大雨、另一邊完全沒雨；'
+          + '實測屏東縣獅子鄉同一時刻，楓林村覆蓋 100%、南世村 0%）。'
+          + '村里邊界圖資為內政部國土測繪中心「村里界圖」開放資料（版本 '
+          + VILL_VER + '），由 jsDelivr 於選定鄉鎮時按需載入（平均約 11 KB）；'
+          + '載入失敗時只有村里下拉停用，整個鄉鎮的查詢不受影響'
       }
     };
   }
@@ -286,19 +351,16 @@ window.__RH_MAIN = function(__mode){
        - 沿海／小面積鄉鎮的覆蓋% 被稀釋，四捨五入後顯示 0
        - 實測彰化縣大城鄉：方形法 7.0%，多邊形遮罩法 14.5%（差 2 倍）
      v1.3：改用鄉鎮實際多邊形當遮罩，分母 = 鄉鎮內像素數。 */
-  var maskCache={};
-  function townMask(idx){
-    if(maskCache[idx]) return maskCache[idx];
-    var d=paths[idx].__data__; if(!d||!d.geometry) return null;
-    var polys=polysOf(d.geometry);
-    var mnx=1e9,mny=1e9,mxx=-1e9,mxy=-1e9;
-    polys.forEach(function(po){po[0].forEach(function(c){
-      var p=lonlatToPxF(c[0],c[1]);
-      if(p[0]<mnx)mnx=p[0]; if(p[0]>mxx)mxx=p[0];
-      if(p[1]<mny)mny=p[1]; if(p[1]>mxy)mxy=p[1];
-    });});
-    var bx=Math.floor(mnx),by=Math.floor(mny);
-    var bw=Math.max(1,Math.ceil(mxx)-bx+1), bh=Math.max(1,Math.ceil(mxy)-by+1);
+  /* [v1.8] 遮罩建立的共通部分抽成 buildMask()：鄉鎮多邊形與半徑圓只差
+     「怎麼把形狀畫進 canvas」，bbox → 縮放 → 取 alpha → 算 inside 完全相同。 */
+  function buildMask(mnx,mny,mxx,mxy,drawPath){
+    /* [v1.8] bbox 夾在影像範圍內。
+       ⚠️ 圓可能跨出雷達圖邊界（離島、極端海岸）：界外像素 alpha=0 會被 classify()
+          判為 hit:false 而不計入分子，卻仍被算進 inside（分母）→ 覆蓋% 被無聲稀釋。
+          夾住後分母跟著縮，語意才正確。鄉鎮遮罩全在影像內，不受影響。 */
+    var bx=Math.max(0,Math.floor(mnx)), by=Math.max(0,Math.floor(mny));
+    var ex=Math.min(IW,Math.ceil(mxx)+1), ey=Math.min(IH,Math.ceil(mxy)+1);
+    var bw=Math.max(1,ex-bx), bh=Math.max(1,ey-by);
     /* 尺寸夾在 [48,512]：太小取樣點不足、太大浪費記憶體 */
     var m=Math.max(bw,bh), scale=1;
     if(m>512) scale=512/m; else if(m<48) scale=48/m;
@@ -306,25 +368,101 @@ window.__RH_MAIN = function(__mode){
     var sxr=cw/bw, syr=ch/bh;
     var mc=document.createElement('canvas'); mc.width=cw; mc.height=ch;
     var mx=mc.getContext('2d');
-    mx.fillStyle='#fff'; mx.beginPath();
-    polys.forEach(function(po){po.forEach(function(ring){
-      ring.forEach(function(c,i){
-        var p=lonlatToPxF(c[0],c[1]);
-        var X=(p[0]-bx)*sxr, Y=(p[1]-by)*syr;
-        if(i)mx.lineTo(X,Y); else mx.moveTo(X,Y);
-      });
-      mx.closePath();
-    });});
-    mx.fill('evenodd');   /* evenodd 讓內環（飛地/孔洞）正確扣除 */
+    mx.fillStyle='#fff';
+    drawPath(mx,bx,by,sxr,syr);
     var md=mx.getImageData(0,0,cw,ch).data;
     var inside=0;
     for(var i=3;i<md.length;i+=4) if(md[i]>128) inside++;
     if(!inside) return null;
-    var o={bx:bx,by:by,bw:bw,bh:bh,cw:cw,ch:ch,mask:md,inside:inside};
-    maskCache[idx]=o;
+    return {
+      bx:bx,by:by,bw:bw,bh:bh,cw:cw,ch:ch,sxr:sxr,syr:syr,
+      mask:md,inside:inside,
+      /* [v1.8] raw = 等效的原生雷達像素數。canvas 放大不會增加真實樣本，
+         inside 只是 canvas 像素數；狀態列要顯示的「幾個雷達格」是這個。 */
+      raw:Math.max(1,Math.round(inside*(bw*bh)/(cw*ch)))
+    };
+  }
+  /* [v1.9] 由 townMask() 再抽一層：吃「polygons 陣列」（= polysOf() 的輸出格式），
+     鄉鎮多邊形與村里多邊形共用同一條路。村里圖資的座標本來就存成這個格式。 */
+  var maskCache={};
+  function polyMask(polys,key){
+    if(maskCache[key]) return maskCache[key];
+    if(!polys||!polys.length) return null;
+    var mnx=1e9,mny=1e9,mxx=-1e9,mxy=-1e9;
+    polys.forEach(function(po){po[0].forEach(function(c){
+      var p=lonlatToPxF(c[0],c[1]);
+      if(p[0]<mnx)mnx=p[0]; if(p[0]>mxx)mxx=p[0];
+      if(p[1]<mny)mny=p[1]; if(p[1]>mxy)mxy=p[1];
+    });});
+    var o=buildMask(mnx,mny,mxx,mxy,function(mx,bx,by,sxr,syr){
+      mx.beginPath();
+      polys.forEach(function(po){po.forEach(function(ring){
+        ring.forEach(function(c,i){
+          var p=lonlatToPxF(c[0],c[1]);
+          var X=(p[0]-bx)*sxr, Y=(p[1]-by)*syr;
+          if(i)mx.lineTo(X,Y); else mx.moveTo(X,Y);
+        });
+        mx.closePath();
+      });});
+      mx.fill('evenodd');   /* evenodd 讓內環（飛地/孔洞）正確扣除 */
+    });
+    if(o) maskCache[key]=o;
     return o;
   }
+  function townPolys(idx){
+    var d=paths[idx]&&paths[idx].__data__;
+    return d&&d.geometry?polysOf(d.geometry):null;
+  }
+  function townMask(idx){ return polyMask(townPolys(idx),'t'+idx); }
   function lonlatToPxF(lon,lat){return [(lon-SLON)/(ELON-SLON)*IW,(ELAT-lat)/(ELAT-SLAT)*IH];}
+  /* ---------- [v1.9] 村里圖資載入 ---------- */
+  /* 只能用 <script> 注入：官網 CSP 的 connect-src 不含外部網域（fetch 會被擋），
+     script-src-elem 白名單才有 cdn.jsdelivr.net（見 record.md §2.10）。
+     圖資檔會自我註冊到 window.__RH_VILL_IDX / window.__RH_VILL[<TOWNCODE>]。 */
+  function loadScript(url){
+    return new Promise(function(res,rej){
+      var s=document.createElement('script'), done=false;
+      var timer=setTimeout(function(){
+        if(done)return; done=true;
+        if(s.parentNode)s.parentNode.removeChild(s);
+        rej(new Error('timeout'));
+      },VILL_TIMEOUT);
+      s.onload=function(){ if(done)return; done=true; clearTimeout(timer); res(); };
+      s.onerror=function(){
+        if(done)return; done=true; clearTimeout(timer);
+        if(s.parentNode)s.parentNode.removeChild(s);
+        rej(new Error('load error'));
+      };
+      s.src=url;
+      document.head.appendChild(s);
+    });
+  }
+  /* 兩層都先看 window 上有沒有：既是快取，也讓「預先注入圖資」成為合法用法
+     （本機測試就是靠這條路，不需要網路，走的仍是同一套後續邏輯）。 */
+  var villIdxP=null;
+  function loadVillIndex(){
+    if(window.__RH_VILL_IDX) return Promise.resolve(window.__RH_VILL_IDX);
+    if(!villIdxP){
+      villIdxP=loadScript(VILL_BASE+'index.js').then(function(){
+        if(!window.__RH_VILL_IDX) throw new Error('index 未註冊');
+        return window.__RH_VILL_IDX;
+      },function(e){ villIdxP=null; throw e; });
+    }
+    return villIdxP;
+  }
+  var villTownP={};
+  function loadVillTown(code){
+    var have=window.__RH_VILL&&window.__RH_VILL[code];
+    if(have) return Promise.resolve(have);
+    if(!villTownP[code]){
+      villTownP[code]=loadScript(VILL_BASE+code+'.js').then(function(){
+        var v=window.__RH_VILL&&window.__RH_VILL[code];
+        if(!v) throw new Error('鄉鎮圖資未註冊');
+        return v;
+      },function(e){ delete villTownP[code]; throw e; });
+    }
+    return villTownP[code];
+  }
 
   /* ---------- 影像取樣 ---------- */
   function sampleOne(url,mk){
@@ -341,7 +479,7 @@ window.__RH_MAIN = function(__mode){
           var rain=0,best=0,bestBand=-1,mmSum=0,mmMax=0;
           var bandHist={};
           for(var i=0;i<d.length;i+=4){
-            if(mask[i+3]<=128) continue;          /* 鄉鎮範圍外，跳過 */
+            if(mask[i+3]<=128) continue;          /* 取樣範圍外，跳過 */
             var c=classify(d[i],d[i+1],d[i+2],d[i+3]);
             if(!c.hit) continue;
             if(c.lv>0){
@@ -379,10 +517,13 @@ window.__RH_MAIN = function(__mode){
     return String(Math.round(c));
   }
   /* [v1.1 P0-2] 優先取雨量圖 _rain.png，失敗才退回 dBZ 回波圖 */
-  /* [v1.2] 判讀結果快取：key = url|鄉鎮索引，同鄉鎮重查即時完成 */
+  /* [v1.2] 判讀結果快取：key = url|遮罩身分，同範圍重查即時完成 */
+  /* [v1.8] 第二段 key 由「鄉鎮索引」改為 curKey（`t<idx>` 或 `c<lon>,<lat>|<km>`）。
+     ⚠️ 這是必須的：同一鄉鎮的不同半徑若共用 key，切換半徑會拿到上一個範圍的
+        判讀結果——畫面正常、數字全錯的靜默錯誤。 */
   var sampleCache={};
-  function sampleImage(rainUrl,dbzUrl,mk,idx){
-    var key=rainUrl+'|'+idx;
+  function sampleImage(rainUrl,dbzUrl,mk,mkKey){
+    var key=rainUrl+'|'+mkKey;
     if(sampleCache[key]) return Promise.resolve(sampleCache[key]);
     return sampleOne(rainUrl,mk).then(function(s){
       if(s.lv>=0) return {s:s,fallback:false};
@@ -438,13 +579,14 @@ window.__RH_MAIN = function(__mode){
     +'.rhchip0{background:#39414f;color:#94a2b6;font-weight:normal}';
   document.head.appendChild(css);
   var p=document.createElement('div');p.id='rhpanel';
-  p.innerHTML='<div id="rhbar"><span>🌧️ 落雨小幫手 · 雨量查詢 <span style="font-weight:normal;opacity:.7">更新 '+VER+'</span></span><span id="rhclose">✕</span></div><div id="rhbody"><div>縣市 <select id="rhco"></select></div><div>鄉鎮 <select id="rhtw"></select></div><button id="rhpick">或：點地圖選點</button><div id="rhstatus">請選擇地區</div><div id="rhsum"></div><div id="rhwarn"></div><table id="rhresult"></table></div>';
+  /* [v1.10] 取樣範圍不再有選單：跟著行政區——有選村里就是那個村里，否則整個鄉鎮。 */
+  p.innerHTML='<div id="rhbar"><span>🌧️ 落雨小幫手 · 雨量查詢 <span style="font-weight:normal;opacity:.7">更新 '+VER+'</span></span><span id="rhclose">✕</span></div><div id="rhbody"><div>縣市 <select id="rhco"></select></div><div>鄉鎮 <select id="rhtw"></select></div><div>村里 <select id="rhvill"><option value="">（先選鄉鎮）</option></select></div><button id="rhpick">或：點地圖選點</button><div id="rhstatus">請選擇地區</div><div id="rhsum"></div><div id="rhwarn"></div><table id="rhresult"></table></div>';
   document.body.appendChild(p);
   (function(){var bar=document.getElementById('rhbar'),dx,dy,drag=false;
    bar.onmousedown=function(e){if(e.target.id==='rhclose')return;drag=true;dx=e.clientX-p.offsetLeft;dy=e.clientY-p.offsetTop;e.preventDefault();};
    document.addEventListener('mousemove',function(e){if(drag){p.style.left=(e.clientX-dx)+'px';p.style.top=(e.clientY-dy)+'px';p.style.right='auto';}});
    document.addEventListener('mouseup',function(){drag=false;});})();
-  document.getElementById('rhclose').onclick=function(){p.style.display='none';removeOutline();};
+  document.getElementById('rhclose').onclick=function(){p.style.display='none';clearShapes();};
 
   var svg=getSvg();
   if(!svg){alert('找不到官網鄉鎮圖層，官網可能已改版（見 record.md §2.2）');return;}
@@ -455,9 +597,31 @@ window.__RH_MAIN = function(__mode){
   coSel.innerHTML='<option value="">--</option>'+Object.keys(byCounty).map(function(c){return '<option>'+c+'</option>';}).join('');
   coSel.onchange=function(){var c=coSel.value;twSel.innerHTML='<option value="">--</option>'+((byCounty[c]||[]).map(function(t){return '<option value="'+t.idx+'">'+t.tw+'</option>';}).join(''));};
   twSel.onchange=function(){if(twSel.value!=='')selectTown(parseInt(twSel.value,10));};
+  var villSel=document.getElementById('rhvill');
+  /* [v1.9] 選村里即改變取樣範圍；選回「（整個鄉鎮）」就是整個鄉鎮。
+     [v1.10] 不再需要「自動切換範圍選單」那段隱性行為——選單已移除。
+     PNG 走瀏覽器 HTTP 快取不重新下載，但遮罩不同故需重新解碼掃描（約 1 秒）。 */
+  villSel.onchange=function(){
+    var i=villSel.value;
+    if(i===''){ curVill=null; }
+    else{
+      var v=villList[parseInt(i,10)];
+      curVill=v?{code:villCode,name:v[0],polys:v[1]}:null;
+    }
+    if(curIdx>=0) applySel();
+  };
 
   /* ---------- [v1.1 P0-3] 紅框：自建 overlay，由經緯度反推螢幕座標 ---------- */
   var curIdx=-1, overlay=null, lastSig='';
+  /* 取樣範圍狀態（[v1.10] 起只有兩種可能）。
+     curVill：{code,name,polys} 或 null——**有值就是取樣範圍，null 則取整個鄉鎮**。
+     villList/villCode：目前鄉鎮已載入的村里清單與 TOWNCODE。
+     pendingLL：點地圖的座標，等村里清單載入後用來自動選中所在村里。
+     curKey：遮罩身分字串，判讀快取的第二段 key（見 sampleImage）。
+     ⚠️ v1.8 的半徑狀態（curKm／curCenter／curScope）已隨功能移除，
+        歷史設計見 record.md §12。 */
+  var curKey='';
+  var curVill=null, villList=[], villCode='', pendingLL=null;
   /* [v1.7] 自動更新狀態。
      curMk/curLabel：目前鄉鎮的取樣遮罩與標籤，供 driver 重查時復用。
      lastRender：最後一次完整查詢的結果，供輕量重繪（不連網）復用。
@@ -465,6 +629,8 @@ window.__RH_MAIN = function(__mode){
      lastLatestT：該次重查看到的最新格時間(ms)，用來判斷官網是否已發佈新影像。
      updRetry：邊界後等待官網新影像的重試次數；updBusy：避免重查疊發。 */
   var curMk=null, curLabel='', lastRender=null;
+  /* [v1.9] 查詢世代，避免並行查詢的舊結果覆蓋新選取（見 applySel／runQuery） */
+  var queryGen=0;
   var updWindowKey=-1, lastLatestT=0, updRetry=0, updBusy=false;
   var DRIVE_TICK=30000, MAXRETRY=5;
   function winKey(ms){return Math.floor(ms/600000);}
@@ -476,12 +642,24 @@ window.__RH_MAIN = function(__mode){
     document.body.appendChild(overlay);
     return overlay;
   }
-  function drawOutline(idx){
-    removeOutline();
-    var d=paths[idx]&&paths[idx].__data__; if(!d||!d.geometry) return;
+  /* [v1.8] 地圖標示改由 drawShapes() 統籌：
+       #rhoutline     鄉鎮外框（選了村里時淡化，保留作方位參考）
+       #rhvilloutline 村里外框（v1.9）
+     兩者都掛在既有 #rhoverlay，螢幕座標一律由經緯度反推（§5.2）。 */
+  function drawShapes(){
+    clearShapes();
+    if(curIdx<0) return;
     var r=rasterRect(); if(!r) return;
+    /* [v1.9] 有村里時鄉鎮外框淡化成參考線，讓真正的取樣範圍突出，
+       同時還看得出「這個村里在鄉裡的哪個位置」。 */
+    var dim=!!curVill;
+    drawPolyOutline(townPolys(curIdx),r,dim?'rgba(255,80,80,.45)':'red',dim?1:2,'rhoutline');
+    if(curVill) drawPolyOutline(curVill.polys,r,'red',2,'rhvilloutline');
+  }
+  function drawPolyOutline(polys,r,stroke,width,id){
+    if(!polys||!polys.length) return;
     var dstr='';
-    polysOf(d.geometry).forEach(function(poly){
+    polys.forEach(function(poly){
       poly.forEach(function(ring){
         ring.forEach(function(c,i){
           var s=lonLatToScreen(c[0],c[1],r);
@@ -494,13 +672,17 @@ window.__RH_MAIN = function(__mode){
     var np=document.createElementNS(SVGNS,'path');
     np.setAttribute('d',dstr);
     np.setAttribute('fill','none');
-    np.setAttribute('stroke','red');
-    np.setAttribute('stroke-width','2');
+    np.setAttribute('stroke',stroke);
+    np.setAttribute('stroke-width',String(width));
     np.setAttribute('stroke-linejoin','round');
-    np.setAttribute('id','rhoutline');
+    np.setAttribute('id',id);
     ensureOverlay().appendChild(np);
   }
-  function removeOutline(){var o=document.getElementById('rhoutline');if(o&&o.parentNode)o.parentNode.removeChild(o);}
+  function clearShapes(){
+    ['rhoutline','rhvilloutline'].forEach(function(id){
+      var o=document.getElementById(id); if(o&&o.parentNode)o.parentNode.removeChild(o);
+    });
+  }
   function rectSig(){
     var r=rasterRect(); if(!r) return '';
     return [Math.round(r.left),Math.round(r.top),Math.round(r.width),Math.round(r.height)].join(',');
@@ -509,32 +691,116 @@ window.__RH_MAIN = function(__mode){
      嚴禁改用 MutationObserver — 會無限迴圈凍結分頁，見 record.md §6.1 */
   setInterval(function(){
     if(curIdx<0) return;
+    /* [v1.8] 面板隱藏時不重繪。
+       ⚠️ v1.7 以前少了這個檢查：按 ✕ 時 removeOutline() 清掉紅框，但下一個
+          tick 的「!rhoutline → 重畫」條件立刻成立，框又被畫回來，關不掉。
+          v1.8 半徑模式多了黃色圓圈，這個既有缺陷會變得更顯眼，故一併修正。 */
+    if(p.style.display==='none') return;
     var sig=rectSig();
-    if(sig!==lastSig||!document.getElementById('rhoutline')){ lastSig=sig; drawOutline(curIdx); }
+    if(sig!==lastSig||!document.getElementById('rhoutline')){ lastSig=sig; drawShapes(); }
   },600);
   window.addEventListener('resize',function(){
-    if(curIdx>=0){setTimeout(function(){drawOutline(curIdx);},300);setTimeout(function(){drawOutline(curIdx);},900);}
+    if(curIdx>=0&&p.style.display!=='none'){setTimeout(drawShapes,300);setTimeout(drawShapes,900);}
   });
 
-  function selectTown(idx){
-    curIdx=idx; lastSig=rectSig(); drawOutline(idx);
+  /* [v1.9] ll = 使用者實際點擊的經緯度（點地圖時傳入），用來自動選中所在村里；
+     換鄉鎮就清掉村里選擇，並在背景載入該鄉鎮的村里清單。 */
+  function selectTown(idx,ll){
+    var changed=(idx!==curIdx);
+    curIdx=idx;
+    if(changed){ curVill=null; villList=[]; villCode=''; }
+    if(changed){ pendingLL=ll||null; fillVillList(idx); }
+    else if(ll) pickVillAt(ll);        /* 同鄉鎮再點一次：直接在已載入的清單裡找 */
+    applySel();
+  }
+  /* [v1.9] 在已載入的村里清單中找出座標所在的村里並選中 */
+  function pickVillAt(ll){
+    if(!villList.length) return;
+    for(var i=0;i<villList.length;i++){
+      var polys=villList[i][1];
+      for(var j=0;j<polys.length;j++){
+        if(!ptInRing(ll,polys[j][0])) continue;
+        var hole=false;
+        for(var k=1;k<polys[j].length;k++) if(ptInRing(ll,polys[j][k])) hole=true;
+        if(hole) continue;
+        villSel.value=String(i);
+        curVill={code:villCode,name:villList[i][0],polys:polys};
+        return;
+      }
+    }
+  }
+  /* [v1.9] 載入並填入村里下拉。任何失敗都只影響這個下拉，不影響查詢。 */
+  function fillVillList(idx){
     var d=paths[idx].__data__.properties;
-    /* [v1.3] 改以整個鄉鎮多邊形取樣，不再用重心方形視窗 */
-    var mk=townMask(idx);
-    if(!mk){document.getElementById('rhstatus').textContent='無法建立此鄉鎮的取樣範圍';return;}
-    /* [v1.7] 記住目前鄉鎮並重置自動更新狀態：把 updWindowKey 設為當下窗口，
+    var key=normName(d.COUNTYNAME)+'|'+normName(d.TOWNNAME);
+    villSel.innerHTML='<option value="">（載入中…）</option>';
+    villSel.disabled=true;
+    var mine=idx;
+    loadVillIndex().then(function(map){
+      var code=map[key];
+      if(!code) throw new Error('索引無此鄉鎮：'+key);
+      return loadVillTown(code).then(function(arr){return [code,arr];});
+    }).then(function(r){
+      if(curIdx!==mine) return;          /* 使用者已換鄉鎮，丟棄這次結果 */
+      villCode=r[0]; villList=r[1];
+      villSel.innerHTML='<option value="">（整個鄉鎮）</option>'
+        +villList.map(function(v,i){return '<option value="'+i+'">'+v[0]+'</option>';}).join('');
+      villSel.disabled=false;
+      /* [v1.9] 點地圖進來的：清單載好後自動選中該點所在的村里
+         （村里清單是非同步載入的，所以只能等到這裡才做）。 */
+      if(pendingLL){
+        var ll=pendingLL; pendingLL=null;
+        pickVillAt(ll);
+        if(curVill) applySel();
+      }
+    }).catch(function(){
+      if(curIdx!==mine) return;
+      villList=[]; villCode=''; curVill=null;
+      /* [v1.10] 半徑功能已移除，失敗時的唯一退路就是整個鄉鎮 */
+      villSel.innerHTML='<option value="">（村里圖資載入失敗，只能查整個鄉鎮）</option>';
+      villSel.disabled=false;
+      applySel();
+    });
+  }
+  /* [v1.8] 依目前選取組出遮罩／快取 key／標籤，然後查詢。
+     [v1.10] 只剩兩種範圍：有選村里就取該村里，否則取整個鄉鎮；
+     其餘流程（取樣、表格、自動更新、快取）完全共用。 */
+  function applySel(){
+    if(curIdx<0) return;
+    var d=paths[curIdx].__data__.properties, mk, key, label;
+    var base=d.COUNTYNAME+d.TOWNNAME;
+    if(curVill){
+      key='v'+curVill.code+'|'+curVill.name;
+      mk=polyMask(curVill.polys,key);
+      label=base+curVill.name;
+    }else{
+      /* [v1.3] 整個鄉鎮以實際多邊形取樣，不用重心方形視窗 */
+      mk=townMask(curIdx);
+      key='t'+curIdx;
+      label=base;
+    }
+    if(!mk){document.getElementById('rhstatus').textContent='無法建立此範圍的取樣遮罩';return;}
+    /* [v1.9] 查詢世代：使用者連續切換（換鄉鎮時「鄉鎮查詢」與「村里清單載好後
+       自動選中村里」會各發一次）時會有多個 runQuery 並行，
+       ⚠️ 先發後到的舊查詢會覆蓋新結果——畫面出現「A 村的名稱配 B 村的數字」，
+          甚至整張表是上一個選擇的資料。故每次選取遞增世代，render 前驗證。 */
+    var gen=++queryGen;
+    lastSig=rectSig(); drawShapes();
+    /* [v1.7] 記住目前範圍並重置自動更新狀態：把 updWindowKey 設為當下窗口，
        避免剛查完下一個 tick 又立刻重查；lastLatestT 由本次查詢結果回填。 */
-    curMk=mk; curLabel=d.COUNTYNAME+d.TOWNNAME;
+    curMk=mk; curKey=key; curLabel=label;
     updWindowKey=winKey(Date.now()); updRetry=0; lastLatestT=0; lastRender=null;
-    runQuery(mk,idx,curLabel).then(function(latest){ if(latest!=null) lastLatestT=latest; });
+    runQuery(mk,key,label,false,gen).then(function(latest){ if(latest!=null) lastLatestT=latest; });
   }
 
   /* [v1.7] silent=true 為背景自動重查：不清空表格、不顯示「查詢…」進度，
      讓舊表格一直留在畫面上，直到新結果 render 時原子替換，避免每 10 分鐘閃爍。
      回傳 Promise，resolve 為本次最新一格的時間(ms)，null 表示取不到清單。 */
-  function runQuery(mk,idx,label,silent){
+  /* [v1.8] 第二參數由鄉鎮索引改為遮罩身分 key（見 sampleImage 註解）。 */
+  /* [v1.9] gen = 發起時的查詢世代；render 前若已被更新的選取取代就整批丟棄。 */
+  function runQuery(mk,mkKey,label,silent,gen){
     if(!silent){
-      document.getElementById('rhstatus').textContent='查詢 '+label+'（範圍 '+mk.inside+' 像素）…';
+      document.getElementById('rhstatus').textContent='查詢 '+label+'（'+mk.raw+' 個雷達格）…';
       document.getElementById('rhwarn').textContent='';
       document.getElementById('rhsum').textContent='';
       document.getElementById('rhresult').innerHTML='';
@@ -556,18 +822,23 @@ window.__RH_MAIN = function(__mode){
       /* [v1.2] 改為並行載入（原為 16 張串行） */
       var t0=Date.now();
       return runPool(tasks,function(tk){
-        return sampleImage(tk.rain,tk.dbz,mk,idx).then(function(o){
+        return sampleImage(tk.rain,tk.dbz,mk,mkKey).then(function(o){
           return {t:tk.t,s:o.s,fallback:o.fallback};
         });
       },silent?null:function(done,total){
         document.getElementById('rhstatus').textContent='查詢 '+label+' … '+done+'/'+total;
       }).then(function(out){
+        /* [v1.9] 已被更新的選取取代 → 整批丟棄，別覆蓋畫面 */
+        if(gen!=null&&gen!==queryGen) return null;
         var results=[],fellBack=0;
         out.forEach(function(o){ if(!o)return; if(o.fallback)fellBack++; results.push({t:o.t,s:o.s}); });
         results.sort(function(a,b){return a.t-b.t;});
         /* [v1.7] 存下結果供輕量重繪（每個 tick 用當下時間重畫「現在」列，不連網） */
-        lastRender={results:results,label:label,fellBack:fellBack,total:tasks.length,elapsed:Date.now()-t0};
-        render(results,label,fellBack,tasks.length,Date.now()-t0);
+        /* [v1.9] raw（雷達格數）跟著這一次的結果存，不再從全域 curMk 讀——
+           否則並行查詢時會出現「A 的名稱配 B 的格數」。 */
+        lastRender={results:results,label:label,fellBack:fellBack,total:tasks.length,
+                    elapsed:Date.now()-t0,raw:mk.raw};
+        render(results,label,fellBack,tasks.length,Date.now()-t0,mk.raw);
         return results.length?results[results.length-1].t.getTime():0;
       });
     });
@@ -576,7 +847,8 @@ window.__RH_MAIN = function(__mode){
      讓黃底「現在」列、實況/預報分隔線、摘要倒數隨真實時間前進。 */
   function renderStored(){
     if(!lastRender)return;
-    render(lastRender.results,lastRender.label,lastRender.fellBack,lastRender.total,lastRender.elapsed);
+    render(lastRender.results,lastRender.label,lastRender.fellBack,lastRender.total,
+           lastRender.elapsed,lastRender.raw);
   }
   /* [v1.7] 自動更新驅動器：常駐定時器，面板隱藏或未選鄉鎮時完全跳過。 */
   setInterval(function(){
@@ -588,7 +860,8 @@ window.__RH_MAIN = function(__mode){
     if(updBusy) return;
     updBusy=true;
     listCacheAt=0;                                 /* 強制重抓清單，讓遲發重試每次真的問官網 */
-    runQuery(curMk,curIdx,curLabel,true).then(function(latest){
+    /* [v1.9] 帶入當下世代（不遞增）：期間使用者若換了選取，這次背景結果會被丟棄 */
+    runQuery(curMk,curKey,curLabel,true,queryGen).then(function(latest){
       updBusy=false;
       if(latest==null) return;                     /* 取不到清單，下個 tick 再試 */
       if(latest>lastLatestT){                       /* 官網已發佈新影像 */
@@ -600,7 +873,7 @@ window.__RH_MAIN = function(__mode){
     },function(){updBusy=false;});
   },DRIVE_TICK);
 
-  function render(results,label,fellBack,total,elapsed){
+  function render(results,label,fellBack,total,elapsed,raw){
     var now=Date.now();
     /* [v1.4] 表格改版：新增「實況/預報」欄與色塊，mm 顯示實際色帶範圍，
        觀測與預報之間畫分隔線 */
@@ -648,7 +921,10 @@ window.__RH_MAIN = function(__mode){
         + (peak?'　最強 '+LV[peak.s.lv].n+' @ '+fmtLocal(peak.t):'');
     }
     document.getElementById('rhsum').textContent=sum;
-    document.getElementById('rhstatus').textContent='✅ '+label+'（每 10 分鐘一格）'
+    /* [v1.8] 狀態列附上等效雷達格數，讓樣本量透明化（半徑 0.5km 只有約 16 格）*/
+    /* [v1.9] raw 由這次查詢傳入，不從全域讀（見 runQuery 註解）*/
+    document.getElementById('rhstatus').textContent='✅ '+label
+      +'（'+(raw?raw+' 個雷達格 · ':'')+'每 10 分鐘一格）'
       +(elapsed?'　'+(elapsed/1000).toFixed(1)+'s':'');
     document.getElementById('rhwarn').textContent = fellBack>0
       ? '⚠️ '+fellBack+'/'+total+' 張取不到雨量圖，已退回回波強度推估，數值僅供參考'
@@ -656,6 +932,8 @@ window.__RH_MAIN = function(__mode){
   }
 
   /* ---------- [v1.1 P0-1] 地圖點選 ---------- */
+  /* [v1.9] 點地圖 = 選中該點所在的鄉鎮，村里圖資載入後再自動選中所在村里。
+     [v1.10] 不再有半徑模式，按鈕文字固定，syncPickLabel 已移除。 */
   document.getElementById('rhpick').onclick=function(){
     document.getElementById('rhstatus').textContent='請點地圖上的位置…';
     function handler(e){
@@ -667,7 +945,8 @@ window.__RH_MAIN = function(__mode){
       if(found>=0){
         var d=paths[found].__data__.properties;
         coSel.value=d.COUNTYNAME; coSel.onchange(); twSel.value=String(found);
-        selectTown(found);
+        /* [v1.9] 把實際點擊座標交給 selectTown，用來自動選中所在村里 */
+        selectTown(found,ll);
       }else{
         document.getElementById('rhstatus').textContent='該點不在任何鄉鎮範圍內（'+ll[0].toFixed(3)+','+ll[1].toFixed(3)+'），請重試';
       }

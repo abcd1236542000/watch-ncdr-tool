@@ -4,6 +4,7 @@
   "license": "MIT",
   "private": true,
   "scripts": {
-    "build": "node scripts/build.mjs"
+    "build": "node scripts/build.mjs",
+    "build:vill": "node scripts/build-vill.mjs"
   }
 }
