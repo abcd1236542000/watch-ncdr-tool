@@ -82,7 +82,7 @@ footer{margin-top:34px;color:#888;font-size:12.5px;border-top:1px solid #e2e2e2;
 <div class="warn"><b>注意事項：</b><br>
 • 本工具<b>必須在落雨小幫手官方網站上執行</b>（雷達圖僅允許同源讀取像素），在其他網站點書籤會出現提示。<br>
 • 資料來源為 NCDR 官方即時雷達，雨量等級由圖上顏色判讀換算，<b>非官方數值，僅供參考</b>。<br>
-• 若面板消失，再點一次書籤即可重新開啟。</div>
+<span id="panelNote"></span></div>
 
 <footer>落雨小幫手雨量查詢工具<br>
 雨量／雷達影像來源：國家災害防救科技中心 (NCDR)<br>
@@ -117,7 +117,7 @@ footer{margin-top:34px;color:#888;font-size:12.5px;border-top:1px solid #e2e2e2;
     meta.notes.coverage + '。<br>' + meta.notes.peak + '。' +
     (meta.notes.resolution ? '<br>' + meta.notes.resolution + '。' : '');
   // 「村里」說明：文案來自 rain.js 的 meta，本頁只提供容器
-  [['villStep', meta.notes.village]].forEach(function (p) {
+  [['villStep', meta.notes.village], ['panelNote', meta.notes.panel]].forEach(function (p) {
     var el = document.getElementById(p[0]);
     if (p[1]) el.innerHTML = p[1] + '。';
     else el.style.display = 'none';

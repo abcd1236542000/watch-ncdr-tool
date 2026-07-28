@@ -93,10 +93,27 @@ window.__RH_MAIN = function(__mode){
          (b) 村里圖資載入失敗時只能退回整個鄉鎮，沒有零依賴的替代範圍。
          若日後要復原，v1.8 的完整設計仍在 record.md §12。
 
-     設計文件見 record.md §12（半徑，v1.10 已移除）、§13（村里）；
-     實作明細見 §7.9、§7.10、§7.11 */
+     v1.11 修正 + 新增（UI 連動與收合）：
+       - 修正：切換「縣市」時只重建了鄉鎮選單，村里選單與選取狀態都沒重置，
+         畫面會變成「新縣市 ＋ 舊鄉鎮的村里清單 ＋ 舊鄉鎮的外框與表格」。
+         改為完整 cascade reset，並**遞增 queryGen 作廢進行中的查詢**
+         （否則 in-flight 的舊查詢完成後會把舊資料寫回畫面，同 §6.14）。
+       - 新增：面板收合／展開。`✕` 維持「完全隱藏」，另加 `—` 收合成約 200px 膠囊，
+         膠囊標題顯示當前選取（如「🌧️ 獅子鄉竹坑村」），點 `＋` 展開。
+       - ⚠️ 收合狀態的單一真實來源是 **DOM class `rhmin`**（不是 JS 變數）：
+         重點書籤時走的是「重入分支」，那裡只能碰 DOM、碰不到既有閉包的變數；
+         用 class 當狀態才能讓兩邊同步（見重入保護區塊）。
+       - ⚠️ 收合時**只有 600ms 外框重繪跟著停**（要隱藏外框），
+         30 秒自動更新 driver **照常運作**（收合是「縮到旁邊持續追蹤」）。
+         兩個定時器的判斷條件因此不同，別誤改成一樣。
 
-  var VER='__BUILD_ID__';  /* build 時由 scripts/build.mjs 蓋成當天日期，勿手填 */
+     設計文件見 record.md §12（半徑，v1.10 已移除）、§13（村里）；
+     實作明細見 §7.9、§7.10、§7.11、§7.12 */
+
+  var VER='__BUILD_ID__';  /* build 時由 scripts/build.mjs 蓋成「日期.hash」，勿手填 */
+  /* [v1.11] 展開狀態的標題文字。收合時會被換成當前選取（見 capsuleTitle()），
+     展開與「重點書籤」時還原成這個值，故抽成常數避免兩處字串不同步。 */
+  var TITLE='🌧️ 落雨小幫手 · 雨量查詢';
   /* [v1.3] 版本感知的重入保護。
      ⚠️ v1.2 以前只檢查 __RH_ACTIVE：若頁面上已有舊版在跑，
         點新版書籤只會把「舊版面板」重新顯示出來，新版永遠載不進去，
@@ -105,7 +122,17 @@ window.__RH_MAIN = function(__mode){
   if(window.__RH_ACTIVE){
     if(window.__RH_VER===VER){
       var ep=document.getElementById('rhpanel');
-      if(ep){ep.style.display='block';return;}
+      if(ep){
+        ep.style.display='block';
+        /* [v1.11] 重點書籤時一律回到展開狀態——使用者點書籤就是想看資料。
+           ⚠️ 這個分支是**新的一次函式呼叫**，碰不到既有閉包的變數，只能操作 DOM；
+              所以收合狀態必須以 class `rhmin` 為單一真實來源（既有閉包用
+              isCollapsed() 讀 class，這裡一移除，那邊立刻同步）。 */
+        ep.classList.remove('rhmin');
+        var em=ep.querySelector('#rhmin'); if(em)em.textContent='—';
+        var et=ep.querySelector('#rhtitlemain'); if(et)et.textContent=TITLE;
+        return;
+      }
     }else{
       ['rhpanel','rhoutline','rhoverlay'].forEach(function(id){
         var n=document.getElementById(id);
@@ -219,6 +246,12 @@ window.__RH_MAIN = function(__mode){
           + '一個村里大約數百到一千多個像素，整個鄉鎮可達數千個'
           + '（實測屏東縣獅子鄉全鄉 6,374 個、其中楓林村 225 個）。'
           + '面板狀態列會顯示目前範圍等效幾個雷達格，範圍越小、覆蓋% 的刻度越粗',
+        /* [v1.11] 面板操作說明。安裝頁原本硬編「若面板消失，再點一次書籤」，
+           有了收合功能後說法要改——依鐵則 4，文案一律由這裡產生。 */
+        panel: '面板右上角「—」可收合成小膠囊（膠囊上會顯示目前查的地區，'
+          + '收合期間仍會持續更新，展開看到的就是最新資料）；'
+          + '「✕」則完全關閉，關閉後再點一次書籤即可重新開啟。'
+          + '標題列可拖曳，面板位置在收合／展開後都會保留',
         /* [v1.9] 村里功能與其外部相依，安裝頁需照實告知使用者 */
         village: '選完鄉鎮可再選「村里」，直接以該村里的實際邊界統計'
           + '（同一個鄉裡的兩個村，常常一邊在下大雨、另一邊完全沒雨；'
@@ -559,7 +592,14 @@ window.__RH_MAIN = function(__mode){
   /* [v1.4] 深色主題 */
   css.textContent='#rhpanel{position:fixed;top:70px;right:14px;width:432px;max-height:82vh;overflow-y:auto;overflow-x:hidden;background:#1b2431;border:1px solid #33415a;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.5);font:13px/1.5 "Microsoft JhengHei",sans-serif;z-index:2147483000;color:#e6edf6}'
     +'#rhbar{background:#243147;color:#fff;padding:7px 10px;font-weight:bold;cursor:move;border-radius:8px 8px 0 0;display:flex;justify-content:space-between;border-bottom:1px solid #33415a}'
-    +'#rhclose{cursor:pointer;padding:0 6px;opacity:.75}#rhclose:hover{opacity:1}'
+    +'#rhclose,#rhmin{cursor:pointer;padding:0 6px;opacity:.75;user-select:none}'
+    +'#rhclose:hover,#rhmin:hover{opacity:1}'
+    /* [v1.11] 收合狀態：面板縮成膠囊，只留標題列。
+       width:auto 讓寬度跟著標題文字，min/max 避免太窄或撐太寬。 */
+    +'#rhpanel.rhmin{width:auto;min-width:150px;max-width:260px;overflow:visible}'
+    +'#rhpanel.rhmin #rhbody{display:none}'
+    +'#rhpanel.rhmin #rhver{display:none}'
+    +'#rhpanel.rhmin #rhbar{border-radius:8px;border-bottom:0}'
     +'#rhbody{padding:10px}'
     +'#rhpanel label,#rhpanel div{color:#e6edf6}'
     +'#rhpanel select{width:100%;padding:5px;margin:2px 0;background:#0f1621;color:#e6edf6;border:1px solid #33415a;border-radius:4px;font:13px inherit}'
@@ -580,13 +620,44 @@ window.__RH_MAIN = function(__mode){
   document.head.appendChild(css);
   var p=document.createElement('div');p.id='rhpanel';
   /* [v1.10] 取樣範圍不再有選單：跟著行政區——有選村里就是那個村里，否則整個鄉鎮。 */
-  p.innerHTML='<div id="rhbar"><span>🌧️ 落雨小幫手 · 雨量查詢 <span style="font-weight:normal;opacity:.7">更新 '+VER+'</span></span><span id="rhclose">✕</span></div><div id="rhbody"><div>縣市 <select id="rhco"></select></div><div>鄉鎮 <select id="rhtw"></select></div><div>村里 <select id="rhvill"><option value="">（先選鄉鎮）</option></select></div><button id="rhpick">或：點地圖選點</button><div id="rhstatus">請選擇地區</div><div id="rhsum"></div><div id="rhwarn"></div><table id="rhresult"></table></div>';
+  /* [v1.11] 標題列拆成 #rhtitlemain（收合時換成當前選取）與 #rhver（收合時 CSS 隱藏），
+     控制項為 #rhmin（收合／展開）＋ #rhclose（完全關閉）。 */
+  p.innerHTML='<div id="rhbar"><span><span id="rhtitlemain">'+TITLE+'</span> <span id="rhver" style="font-weight:normal;opacity:.7">更新 '+VER+'</span></span><span><span id="rhmin" title="收合面板">—</span><span id="rhclose" title="關閉面板">✕</span></span></div><div id="rhbody"><div>縣市 <select id="rhco"></select></div><div>鄉鎮 <select id="rhtw"></select></div><div>村里 <select id="rhvill"><option value="">（先選鄉鎮）</option></select></div><button id="rhpick">或：點地圖選點</button><div id="rhstatus">請選擇地區</div><div id="rhsum"></div><div id="rhwarn"></div><table id="rhresult"></table></div>';
   document.body.appendChild(p);
   (function(){var bar=document.getElementById('rhbar'),dx,dy,drag=false;
-   bar.onmousedown=function(e){if(e.target.id==='rhclose')return;drag=true;dx=e.clientX-p.offsetLeft;dy=e.clientY-p.offsetTop;e.preventDefault();};
+   /* [v1.11] 控制項（—／✕）不觸發拖曳。收合狀態下標題列仍可拖曳，
+      展開改用專用的 #rhmin 按鈕 → 不必做「拖曳 vs 點擊」的位移判定。 */
+   bar.onmousedown=function(e){if(e.target.id==='rhclose'||e.target.id==='rhmin')return;drag=true;dx=e.clientX-p.offsetLeft;dy=e.clientY-p.offsetTop;e.preventDefault();};
    document.addEventListener('mousemove',function(e){if(drag){p.style.left=(e.clientX-dx)+'px';p.style.top=(e.clientY-dy)+'px';p.style.right='auto';}});
    document.addEventListener('mouseup',function(){drag=false;});})();
   document.getElementById('rhclose').onclick=function(){p.style.display='none';clearShapes();};
+
+  /* ---------- [v1.11] 收合／展開 ---------- */
+  /* ⚠️ 狀態的單一真實來源是 class `rhmin`，不是 JS 變數——「重點書籤」走的重入分支
+     只能碰 DOM（見檔頭重入保護），用 class 才能讓兩邊同步。 */
+  function isCollapsed(){return p.classList.contains('rhmin');}
+  /* 收合時標題換成當前選取，讓膠囊本身就是資訊 */
+  function capsuleTitle(){
+    /* ⚠️ 這段可能在「官網改版 → alert 後 return」的情況下被呼叫（#rhmin 早於 svg 檢查
+       就綁好了），那時 paths／curIdx 還沒賦值，故用寬鬆判斷而非 curIdx<0。 */
+    if(!paths||!(curIdx>=0)) return TITLE;
+    var d=paths[curIdx].__data__.properties;
+    return '🌧️ '+(curVill?d.TOWNNAME+curVill.name:d.COUNTYNAME+d.TOWNNAME);
+  }
+  function setCollapsed(on){
+    var mn=document.getElementById('rhmin'), tm=document.getElementById('rhtitlemain');
+    if(on){
+      p.classList.add('rhmin'); mn.textContent='＋'; mn.title='展開面板';
+      tm.textContent=capsuleTitle();
+      clearShapes();          /* 收合時隱藏地圖外框（決策 D1）*/
+    }else{
+      p.classList.remove('rhmin'); mn.textContent='—'; mn.title='收合面板';
+      tm.textContent=TITLE;
+      drawShapes();           /* 立即重畫，不必等 600ms 定時器 */
+      renderStored();         /* 立即用最新結果＋當下時間重畫（driver 沒停過，不需連網）*/
+    }
+  }
+  document.getElementById('rhmin').onclick=function(){setCollapsed(!isCollapsed());};
 
   var svg=getSvg();
   if(!svg){alert('找不到官網鄉鎮圖層，官網可能已改版（見 record.md §2.2）');return;}
@@ -595,7 +666,32 @@ window.__RH_MAIN = function(__mode){
   paths.forEach(function(pt,idx){var d=pt.__data__&&pt.__data__.properties;if(!d)return;(byCounty[d.COUNTYNAME]=byCounty[d.COUNTYNAME]||[]).push({tw:d.TOWNNAME,idx:idx});});
   var coSel=document.getElementById('rhco'),twSel=document.getElementById('rhtw');
   coSel.innerHTML='<option value="">--</option>'+Object.keys(byCounty).map(function(c){return '<option>'+c+'</option>';}).join('');
-  coSel.onchange=function(){var c=coSel.value;twSel.innerHTML='<option value="">--</option>'+((byCounty[c]||[]).map(function(t){return '<option value="'+t.idx+'">'+t.tw+'</option>';}).join(''));};
+  /* [v1.11] 拆成兩個函式。
+     ⚠️ 點地圖流程（見 #rhpick）會在程式內部設好 coSel.value 後只重建鄉鎮選項，
+        不能走完整 reset——否則點一下地圖畫面會先被清空再重查，表格閃一下空白。 */
+  function rebuildTownOptions(county){
+    twSel.innerHTML='<option value="">--</option>'
+      +((byCounty[county]||[]).map(function(t){return '<option value="'+t.idx+'">'+t.tw+'</option>';}).join(''));
+  }
+  /* [v1.11] 換縣市時的 cascade reset：舊鄉鎮／村里的一切都要清乾淨。
+     不做的話畫面會變成「新縣市 ＋ 舊鄉鎮的村里清單 ＋ 舊鄉鎮的外框與表格」，
+     因為 curIdx 還在，600ms 重繪與 30 秒 driver 都會繼續跟著舊鄉鎮跑。 */
+  function resetSelection(){
+    /* ⚠️ 最關鍵的一行：作廢進行中的查詢。切縣市時可能有 in-flight 的 runQuery
+       （剛選鄉鎮、還在抓 16 張 PNG），不遞增世代它完成後會照樣把舊資料寫回畫面（§6.14）。 */
+    queryGen++;
+    curIdx=-1; curKey=''; curMk=null; curLabel=''; lastRender=null;
+    curVill=null; villList=[]; villCode=''; pendingLL=null;
+    villSel.innerHTML='<option value="">（先選鄉鎮）</option>';
+    villSel.disabled=false;
+    clearShapes();
+    document.getElementById('rhstatus').textContent='請選擇地區';
+    document.getElementById('rhsum').textContent='';
+    document.getElementById('rhwarn').textContent='';
+    document.getElementById('rhresult').innerHTML='';
+    if(isCollapsed()) document.getElementById('rhtitlemain').textContent=capsuleTitle();
+  }
+  coSel.onchange=function(){ rebuildTownOptions(coSel.value); resetSelection(); };
   twSel.onchange=function(){if(twSel.value!=='')selectTown(parseInt(twSel.value,10));};
   var villSel=document.getElementById('rhvill');
   /* [v1.9] 選村里即改變取樣範圍；選回「（整個鄉鎮）」就是整個鄉鎮。
@@ -694,13 +790,16 @@ window.__RH_MAIN = function(__mode){
     /* [v1.8] 面板隱藏時不重繪。
        ⚠️ v1.7 以前少了這個檢查：按 ✕ 時 removeOutline() 清掉紅框，但下一個
           tick 的「!rhoutline → 重畫」條件立刻成立，框又被畫回來，關不掉。
-          v1.8 半徑模式多了黃色圓圈，這個既有缺陷會變得更顯眼，故一併修正。 */
-    if(p.style.display==='none') return;
+          v1.8 半徑模式多了黃色圓圈，這個既有缺陷會變得更顯眼，故一併修正。
+       [v1.11] 收合時同理要停——收合會 clearShapes()，不擋這裡就 600ms 後畫回來。
+          ⚠️ 但 30 秒自動更新 driver **不能**跟著停（收合仍要持續追蹤，決策 D2），
+             所以兩個定時器的條件刻意不同，別「順手」改成一樣。 */
+    if(isCollapsed()||p.style.display==='none') return;
     var sig=rectSig();
     if(sig!==lastSig||!document.getElementById('rhoutline')){ lastSig=sig; drawShapes(); }
   },600);
   window.addEventListener('resize',function(){
-    if(curIdx>=0&&p.style.display!=='none'){setTimeout(drawShapes,300);setTimeout(drawShapes,900);}
+    if(curIdx>=0&&!isCollapsed()&&p.style.display!=='none'){setTimeout(drawShapes,300);setTimeout(drawShapes,900);}
   });
 
   /* [v1.9] ll = 使用者實際點擊的經緯度（點地圖時傳入），用來自動選中所在村里；
@@ -806,6 +905,9 @@ window.__RH_MAIN = function(__mode){
       document.getElementById('rhresult').innerHTML='';
     }
     return fetchRows().then(function(rows){
+      /* [v1.11] 一進來就先驗世代：過期的查詢連 16 張圖都不必發，
+         也就不會有任何後續的 DOM 寫入（見下方 progress 回呼的教訓）。 */
+      if(gen!=null&&gen!==queryGen) return null;
       var tasks=[];
       rows.forEach(function(c){
         var raw=(c[2]||'').replace(/^"|"$/g,'');
@@ -826,6 +928,12 @@ window.__RH_MAIN = function(__mode){
           return {t:tk.t,s:o.s,fallback:o.fallback};
         });
       },silent?null:function(done,total){
+        /* [v1.11] ⚠️ §6.14 只修了 render 前的世代檢查，漏了這裡——
+           進度回呼每載完一張圖就寫狀態列。切換縣市後舊查詢的 16 張圖會把
+           「請選擇地區」一路蓋成「查詢 舊鄉鎮 … 16/16」，而且**永遠停在那裡**
+           （render 已被世代擋住，不會再有 ✅ 來覆蓋它）。
+           教訓：世代檢查要放在「所有會寫 DOM 的地方」，不是只有最後那一次。 */
+        if(gen!=null&&gen!==queryGen) return;
         document.getElementById('rhstatus').textContent='查詢 '+label+' … '+done+'/'+total;
       }).then(function(out){
         /* [v1.9] 已被更新的選取取代 → 整批丟棄，別覆蓋畫面 */
@@ -854,6 +962,10 @@ window.__RH_MAIN = function(__mode){
   setInterval(function(){
     if(curIdx<0||!curMk) return;
     if(p.style.display==='none') return;           /* 隱藏即停，重開自動恢復 */
+    /* ⚠️ [v1.11] 這裡**刻意不檢查 isCollapsed()**：收合是「縮到旁邊持續追蹤」，
+       仍要每 10 分鐘補進官網新影像，展開時才會是最新資料（決策 D2）。
+       render() 只寫 #rhbody 內的元素（收合時隱藏中），沒有視覺成本；
+       driver 也不呼叫 drawShapes()，所以不會把收合時清掉的外框畫回來。 */
     var wk=winKey(Date.now());
     if(wk===updWindowKey){ renderStored(); return; } /* 同窗口：只輕量重繪 */
     /* 跨過 10 分鐘窗口邊界 → 完整重查（背景 silent，不閃爍） */
@@ -944,7 +1056,9 @@ window.__RH_MAIN = function(__mode){
       var found=findTownByLonLat(ll);
       if(found>=0){
         var d=paths[found].__data__.properties;
-        coSel.value=d.COUNTYNAME; coSel.onchange(); twSel.value=String(found);
+        /* [v1.11] 只重建鄉鎮選項，不走 resetSelection()——否則點一下地圖
+           畫面會先被清空再重查，表格閃一下空白。 */
+        coSel.value=d.COUNTYNAME; rebuildTownOptions(d.COUNTYNAME); twSel.value=String(found);
         /* [v1.9] 把實際點擊座標交給 selectTown，用來自動選中所在村里 */
         selectTown(found,ll);
       }else{
