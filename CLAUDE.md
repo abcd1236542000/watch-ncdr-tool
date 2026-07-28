@@ -23,6 +23,7 @@
 | `scripts/build.mjs` | build：terser 壓縮 + 蓋當天日期建置識別碼 | 一般不用動 |
 | `scripts/build-vill.mjs` | 村里圖資管線：下載政府開放資料 → mapshaper 簡化切檔 → 包 JS | 換圖資版本才動 |
 | `.githooks/pre-commit` | 門禁：src 改了但 dist 沒重編就擋 commit | 一般不用動 |
+| `server/` | **API 服務**（`npm run api`）：不開瀏覽器直接查雨量，回 JSON。與 bookmarklet **完全獨立**，設計與驗收見 `record.md` §15 | ✅ 直接改，不用 build |
 
 ## 鐵則
 
@@ -36,10 +37,18 @@
    - **開發測試不必 push** → 用 DevTools Local Overrides（CSP 只看請求 URL，回應可換成本機檔案），或直接注入 `window.__RH_VILL_IDX`／`window.__RH_VILL[code]`（載入函式會先看 `window`，這是設計好的合法路徑）。步驟見 `record.md` §13.10。
    - 動到村里功能前先讀 `record.md` §13；換圖資版本要同步改 `src/rain.js` 的 `VILL_VER` 與 `scripts/build-vill.mjs` 的 `VER`。
 7. **非同步查詢一定要帶世代（`queryGen`）**：UI 能在前一次查詢完成前再次觸發，舊結果會覆蓋新選擇。踩過兩次，見 `record.md` §6.14。
+8. **色盤有兩份副本，改一份就要改另一份**：`src/rain.js` 的 `PAL`／`classify()` 與
+   `server/lib/palette.mjs` 是**刻意的重複**（API 選了「獨立新增、工具本體一行不動」，
+   取捨見 `record.md` §15.2）。只改一邊 → API 與工具判讀不一致，而且**不會有任何錯誤訊息**。
+   動到色盤、`classify()`、`sampleOne()` 的統計語意時，兩邊一起改並重跑 §15.10 的逐格比對。
+9. **API 不是「包一層」，是第二條判讀管線**：`server/` 自己抓 PNG、自己柵格化遮罩、
+   自己算統計。鄉鎮界線用**村里聯集**（不是官網 SVG，也不需要 dissolve）。
+   因此 API 與面板的覆蓋% 會系統性差 2~3 個百分點，這是已量化並接受的取捨（§15.10），不是 bug。
 
 ## 常用指令
 
 ```bash
+npm run api          # 啟動 API 服務（預設 8787）；不影響 bookmarklet
 npm run build        # 由 src/rain.js 產生 dist/rain.js（terser 壓縮 + 蓋當天日期）
 npm run build:vill   # 產生 data/vill/<版本>/（已存在則略過；加 -- --force 重跑）
 git config core.hooksPath .githooks   # 每台機器一次性：啟用 pre-commit 門禁

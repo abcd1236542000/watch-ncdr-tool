@@ -5,6 +5,11 @@
   "private": true,
   "scripts": {
     "build": "node scripts/build.mjs",
-    "build:vill": "node scripts/build-vill.mjs"
+    "build:vill": "node scripts/build-vill.mjs",
+    "api": "node server/index.mjs"
+  },
+  "//dependencies": "pngjs 只給 server/ 用（record.md §15.6）。dist/rain.js 仍是零相依單檔，bookmarklet 不受影響。",
+  "dependencies": {
+    "pngjs": "^7.0.0"
   }
 }

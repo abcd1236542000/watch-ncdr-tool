@@ -132,6 +132,9 @@ watch-ncdr-tool/
 ├── docs/
 │   ├── record.md                       持續維護的開發紀錄簿：架構、踩雷紀錄、每輪迭代、待辦
 │   └── screenshots/                    本文件使用的操作截圖
+├── server/                             API 服務（npm run api），與書籤完全獨立
+│   ├── index.mjs                       HTTP 入口、查詢解析、回應組裝
+│   └── lib/                            palette / mask / geo / ncdr / sample
 ├── scripts/
 │   ├── build.mjs                       建置：terser 壓縮 + 蓋當天日期建置識別碼
 │   └── build-vill.mjs                  村里圖資管線：下載政府開放資料 → 簡化切檔 → 包成 JS
@@ -143,9 +146,61 @@ watch-ncdr-tool/
 └── README.md
 ```
 
+## API 服務（不開瀏覽器也能查）
+
+書籤要在官網頁面上手動操作。如果想**用程式取得同樣的資料**，可以啟動本機 API：
+
+```bash
+npm install     # 只需一次（相依只有 pngjs）
+npm run api     # 預設 http://localhost:8787
+```
+
+三種查詢方式：
+
+```bash
+# 鄉鎮
+curl -G http://localhost:8787/rain \
+  --data-urlencode county=屏東縣 --data-urlencode town=滿州鄉
+
+# 村里
+curl -G http://localhost:8787/rain \
+  --data-urlencode county=屏東縣 --data-urlencode town=滿州鄉 --data-urlencode village=九棚村
+
+# 經緯度（回鄉鎮層級，另附 hintVillage 告訴你點到哪個村里）
+curl "http://localhost:8787/rain?lon=120.8769&lat=22.1027"
+```
+
+回傳固定 16 筆（3 筆實測 + 13 筆預報，10 分鐘一格）：
+
+```json
+{
+  "area":   { "county":"屏東縣", "town":"滿州鄉", "village":null, "level":"town" },
+  "source": { "radarPixels":3059, "listStale":false, "villVer":"1150624" },
+  "series": [
+    { "time":"2026-07-28T23:20:00+08:00", "kind":"obs", "isPast":true,
+      "level":2, "levelText":"小雨", "mmRange":"0.3~1mm",
+      "peakMmRange":"17~25mm", "peakLevel":5, "cover":52.96, "mmMax":17 }
+  ]
+}
+```
+
+另有 `GET /meta` 回色盤與等級對照表。
+
+**地名的「臺」與「台」**：查詢時兩種寫法都接受（`臺北市` = `台北市`），
+回應一律使用圖資的權威寫法，與書籤面板顯示的地名完全相同。
+
+**與書籤面板的差異**（重要）：API 自備鄉鎮界線（用村里圖資聯集），
+官網 SVG 的界線則是極簡多邊形，兩者面積差約 3%，
+因此**覆蓋% 會系統性低 2~3 個百分點**，等級偶爾差一階（實測 16 格中 15 格相同）。
+量化根因見 [`docs/record.md`](./docs/record.md) §15.10。
+API 只能查「現在」——NCDR 沒有歷史查詢端點。
+
 ## 開發流程
 
 > 三條規則：**只改 `src/rain.js`、絕不手改 `dist/`**；**改完 `npm run build`**；**不管版本號，變更記到 `CHANGELOG.md`**。
+>
+> `server/`（API）不受這三條約束：它不經 build，直接改直接跑。
+> 但**色盤是第二份副本**，調色盤時 `src/rain.js` 與 `server/lib/palette.mjs` 要一起改。
 
 **前置（每台機器一次性）**：啟用隨 repo 走的 pre-commit 門禁
 
