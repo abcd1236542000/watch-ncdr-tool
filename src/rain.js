@@ -107,8 +107,19 @@ window.__RH_MAIN = function(__mode){
          30 秒自動更新 driver **照常運作**（收合是「縮到旁邊持續追蹤」）。
          兩個定時器的判斷條件因此不同，別誤改成一樣。
 
-     設計文件見 record.md §12（半徑，v1.10 已移除）、§13（村里）；
-     實作明細見 §7.9、§7.10、§7.11、§7.12 */
+     v1.12 修正（點地圖的粒度）：
+       - 問題：用「點地圖選點」時結果不像從下拉選鄉鎮那樣停在鄉鎮範圍，
+         而是**自動縮到點到的那個村里**——同樣是「選地區」，兩條路徑粒度不一致，
+         而且村里名多數人不熟，突然跳到「內獅村」不可預期。
+       - 改為：點地圖一律視為「重新選地區」→ 回到**整個鄉鎮**、清掉村里選擇，
+         點到的村里只用一行 `#rhhint` 提示（純文字），要縮小自己從村里下拉挑。
+       - pickVillAt() 拆成 **findVillAt()：只回傳索引、無副作用**。
+         ⚠️ 舊的 pickVillAt 會直接設 curVill 並改動下拉，是不一致的根源。
+       - ⚠️ 提示不能塞 #rhstatus（每 30 秒被 driver 的 render 重寫會消失），
+         也不能塞 #rhwarn（那是「取不到雨量圖」的警告語意）→ 另開 #rhhint。
+
+     設計文件見 record.md §12（半徑，v1.10 已移除）、§13（村里）、§14.1（點地圖粒度）；
+     實作明細見 §7.9、§7.10、§7.11、§7.12、§7.13 */
 
   var VER='__BUILD_ID__';  /* build 時由 scripts/build.mjs 蓋成「日期.hash」，勿手填 */
   /* [v1.11] 展開狀態的標題文字。收合時會被換成當前選取（見 capsuleTitle()），
@@ -606,6 +617,9 @@ window.__RH_MAIN = function(__mode){
     +'#rhpick{width:100%;padding:7px;background:#2563a8;color:#fff;border:0;border-radius:5px;cursor:pointer;margin-top:8px;font:13px inherit}'
     +'#rhpick:hover{background:#2d74c4}'
     +'#rhstatus{margin:6px 0;color:#9fb0c8;min-height:18px;font-size:12px}'
+    /* [v1.12] 點地圖後的位置提示。獨立一列：不能併進 #rhstatus（會被 driver 重寫）
+       或 #rhwarn（語意是警告）。:empty 讓沒提示時不佔高度。 */
+    +'#rhhint{font-size:11.5px;color:#9ad0ff;margin:4px 0}#rhhint:empty{display:none}'
     +'#rhsum{font-size:12px;font-weight:bold;color:#cfe4ff;background:#22344d;border-radius:4px;padding:5px 7px;margin:5px 0}#rhsum:empty{display:none}'
     +'#rhwarn{font-size:11px;color:#ffc069;margin-top:4px}'
     +'#rhresult{width:100%;border-collapse:collapse;margin-top:8px}'
@@ -622,7 +636,7 @@ window.__RH_MAIN = function(__mode){
   /* [v1.10] 取樣範圍不再有選單：跟著行政區——有選村里就是那個村里，否則整個鄉鎮。 */
   /* [v1.11] 標題列拆成 #rhtitlemain（收合時換成當前選取）與 #rhver（收合時 CSS 隱藏），
      控制項為 #rhmin（收合／展開）＋ #rhclose（完全關閉）。 */
-  p.innerHTML='<div id="rhbar"><span><span id="rhtitlemain">'+TITLE+'</span> <span id="rhver" style="font-weight:normal;opacity:.7">更新 '+VER+'</span></span><span><span id="rhmin" title="收合面板">—</span><span id="rhclose" title="關閉面板">✕</span></span></div><div id="rhbody"><div>縣市 <select id="rhco"></select></div><div>鄉鎮 <select id="rhtw"></select></div><div>村里 <select id="rhvill"><option value="">（先選鄉鎮）</option></select></div><button id="rhpick">或：點地圖選點</button><div id="rhstatus">請選擇地區</div><div id="rhsum"></div><div id="rhwarn"></div><table id="rhresult"></table></div>';
+  p.innerHTML='<div id="rhbar"><span><span id="rhtitlemain">'+TITLE+'</span> <span id="rhver" style="font-weight:normal;opacity:.7">更新 '+VER+'</span></span><span><span id="rhmin" title="收合面板">—</span><span id="rhclose" title="關閉面板">✕</span></span></div><div id="rhbody"><div>縣市 <select id="rhco"></select></div><div>鄉鎮 <select id="rhtw"></select></div><div>村里 <select id="rhvill"><option value="">（先選鄉鎮）</option></select></div><button id="rhpick">或：點地圖選點</button><div id="rhstatus">請選擇地區</div><div id="rhhint"></div><div id="rhsum"></div><div id="rhwarn"></div><table id="rhresult"></table></div>';
   document.body.appendChild(p);
   (function(){var bar=document.getElementById('rhbar'),dx,dy,drag=false;
    /* [v1.11] 控制項（—／✕）不觸發拖曳。收合狀態下標題列仍可拖曳，
@@ -685,6 +699,7 @@ window.__RH_MAIN = function(__mode){
     villSel.innerHTML='<option value="">（先選鄉鎮）</option>';
     villSel.disabled=false;
     clearShapes();
+    setHint('');
     document.getElementById('rhstatus').textContent='請選擇地區';
     document.getElementById('rhsum').textContent='';
     document.getElementById('rhwarn').textContent='';
@@ -698,6 +713,8 @@ window.__RH_MAIN = function(__mode){
      [v1.10] 不再需要「自動切換範圍選單」那段隱性行為——選單已移除。
      PNG 走瀏覽器 HTTP 快取不重新下載，但遮罩不同故需重新解碼掃描（約 1 秒）。 */
   villSel.onchange=function(){
+    /* [v1.12] 手動選村里 = 使用者已自行決定範圍，點地圖留下的提示就沒用了 */
+    setHint('');
     var i=villSel.value;
     if(i===''){ curVill=null; }
     else{
@@ -802,31 +819,42 @@ window.__RH_MAIN = function(__mode){
     if(curIdx>=0&&!isCollapsed()&&p.style.display!=='none'){setTimeout(drawShapes,300);setTimeout(drawShapes,900);}
   });
 
-  /* [v1.9] ll = 使用者實際點擊的經緯度（點地圖時傳入），用來自動選中所在村里；
-     換鄉鎮就清掉村里選擇，並在背景載入該鄉鎮的村里清單。 */
+  /* [v1.9] 換鄉鎮就清掉村里選擇，並在背景載入該鄉鎮的村里清單。
+     [v1.12] ll = 點地圖的座標。**點地圖一律視為「重新選地區」**：
+       回到整個鄉鎮、清掉村里選擇，ll 只用來產生 #rhhint 提示。
+       ⚠️ v1.9–v1.11 是「自動選中點到的村里」，與「下拉選鄉鎮」粒度不一致
+          且不可預期（使用者回報），見 record.md §14.1。 */
   function selectTown(idx,ll){
     var changed=(idx!==curIdx);
     curIdx=idx;
-    if(changed){ curVill=null; villList=[]; villCode=''; }
+    if(changed){ villList=[]; villCode=''; }
+    /* 有 ll（點地圖）或換了鄉鎮 → 一律退回整個鄉鎮 */
+    if(ll||changed){ curVill=null; villSel.value=''; }
+    setHint('');
     if(changed){ pendingLL=ll||null; fillVillList(idx); }
-    else if(ll) pickVillAt(ll);        /* 同鄉鎮再點一次：直接在已載入的清單裡找 */
+    else if(ll) showHintFor(ll);   /* 同鄉鎮再點：清單已在手上，直接提示 */
     applySel();
   }
-  /* [v1.9] 在已載入的村里清單中找出座標所在的村里並選中 */
-  function pickVillAt(ll){
-    if(!villList.length) return;
+  /* [v1.12] 找出座標落在哪個村里，**只回傳索引、不改任何狀態**。
+     ⚠️ 前身 pickVillAt() 會直接設 curVill 並改動下拉——副作用藏在查詢函式裡，
+        就是「點地圖自己選了村里」的根源。查詢與變更要分開。 */
+  function findVillAt(ll){
     for(var i=0;i<villList.length;i++){
       var polys=villList[i][1];
       for(var j=0;j<polys.length;j++){
         if(!ptInRing(ll,polys[j][0])) continue;
         var hole=false;
         for(var k=1;k<polys[j].length;k++) if(ptInRing(ll,polys[j][k])) hole=true;
-        if(hole) continue;
-        villSel.value=String(i);
-        curVill={code:villCode,name:villList[i][0],polys:polys};
-        return;
+        if(!hole) return i;
       }
     }
+    return -1;
+  }
+  function setHint(t){ var h=document.getElementById('rhhint'); if(h) h.textContent=t; }
+  /* [v1.12] 產生「你點的位置在 ○○村」提示。村里圖資沒載到就靜靜不顯示。 */
+  function showHintFor(ll){
+    var i=villList.length?findVillAt(ll):-1;
+    setHint(i>=0 ? '📍 你點的位置在 '+villList[i][0]+'（要只看該村里，請從上面的「村里」選單挑）' : '');
   }
   /* [v1.9] 載入並填入村里下拉。任何失敗都只影響這個下拉，不影響查詢。 */
   function fillVillList(idx){
@@ -845,12 +873,12 @@ window.__RH_MAIN = function(__mode){
       villSel.innerHTML='<option value="">（整個鄉鎮）</option>'
         +villList.map(function(v,i){return '<option value="'+i+'">'+v[0]+'</option>';}).join('');
       villSel.disabled=false;
-      /* [v1.9] 點地圖進來的：清單載好後自動選中該點所在的村里
-         （村里清單是非同步載入的，所以只能等到這裡才做）。 */
+      /* [v1.12] 點地圖進來的：清單載好後只產生提示，**不改變查詢範圍**
+         （村里清單是非同步載入的，所以只能等到這裡才判斷點在哪個村里）。
+         因為範圍沒變，這裡不需要再 applySel()。 */
       if(pendingLL){
         var ll=pendingLL; pendingLL=null;
-        pickVillAt(ll);
-        if(curVill) applySel();
+        showHintFor(ll);
       }
     }).catch(function(){
       if(curIdx!==mine) return;
@@ -1052,7 +1080,10 @@ window.__RH_MAIN = function(__mode){
       if(p.contains(e.target))return;
       document.removeEventListener('click',handler,true);
       var ll=screenToLonLat(e.clientX,e.clientY);
-      if(!ll){document.getElementById('rhstatus').textContent='請點在地圖範圍內，請重試';return;}
+      /* [v1.12] 點失敗時也要清掉上一次的位置提示——否則畫面會同時出現
+         「該點不在任何鄉鎮範圍內」與「你點的位置在 ○○村」，兩行互相矛盾
+         （實測 A-6 抓到）。 */
+      if(!ll){setHint('');document.getElementById('rhstatus').textContent='請點在地圖範圍內，請重試';return;}
       var found=findTownByLonLat(ll);
       if(found>=0){
         var d=paths[found].__data__.properties;
@@ -1062,6 +1093,7 @@ window.__RH_MAIN = function(__mode){
         /* [v1.9] 把實際點擊座標交給 selectTown，用來自動選中所在村里 */
         selectTown(found,ll);
       }else{
+        setHint('');
         document.getElementById('rhstatus').textContent='該點不在任何鄉鎮範圍內（'+ll[0].toFixed(3)+','+ll[1].toFixed(3)+'），請重試';
       }
     }
