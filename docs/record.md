@@ -615,8 +615,20 @@ A 豪大雨、B 小雨或無雨。」
 | 10 | 競態（§6.14） | ✅ 修正後名稱與格數一致；快速連選兩村取後者 |
 | 11 | 回歸 | ✅ 整個鄉鎮、半徑圓、✕ 隱藏／重開、標示重繪皆正常 |
 
-**尚未驗證的一件事**：真實的 jsDelivr 載入路徑。圖資必須 push 到公開 repo 才讀得到
-（本機 localhost 被官網 CSP 擋），使用者本輪選擇不 commit，故僅驗證到「降級行為正確」。
+**真實 jsDelivr 載入路徑（2026-07-28 補驗，通過）**：圖資 push 到
+`feat/village-sampling` 分支後，用內建的 `window.__RH_VILL_BASE` 覆寫指向
+`…/watch-ncdr-tool@feat/village-sampling/data/vill/1150624/`，在官網實測：
+
+| 驗證 | 結果 |
+| --- | --- |
+| `index.js` 經 jsDelivr 載入 | ✅ 368 個鄉鎮索引 |
+| 鄉鎮檔按需載入 | ✅ 只抓 `10013320.js` 一檔，未預載其他 367 檔 |
+| 村里下拉 | ✅ 8 個真實村名 |
+| 選楓林村 | ✅ 225 格、村里外框正確、摘要「目前正在下雨」 |
+| CSP | ✅ 全程未被擋（`dist/rain.js` 本身也是從 jsDelivr 載入的）|
+
+⚠️ 但 `VILL_BASE` 硬編指向 **`@main`**，所以要對真實使用者生效，
+仍須把圖資合併進 `main`（見 §8）。
 
 ### 7.9 v1.8 取樣範圍細化明細（2026-07-28）
 
@@ -1028,10 +1040,11 @@ var meta = window.__RH_MAIN('meta');
 
 - [x] **階段 A**：點位半徑圓取樣（0.5／1／2／5 km）→ **已實作並實測通過**（明細 §7.9）
 - [x] **階段 B**：村里行政界取樣 → **已實作並實測通過**（設計 §13、明細 §7.10）
-- [ ] **村里功能上線前必做**：把 `data/vill/1150624/` push 到公開 repo，
-      並在官網實測真實 jsDelivr 載入路徑（目前只驗證過降級行為）。
-      ⚠️ 不想 push 也能先測——用 DevTools Local Overrides，見 §13.10；
-      「完全不上傳」的替代方案（內嵌進書籤）評估見 §13.11
+- [x] 圖資已 push 到 `feat/village-sampling` 分支，並在官網**實測真實 jsDelivr 載入路徑通過**（§7.10）
+- [ ] **村里功能對真實使用者生效的最後一步**：把分支合併進 `main` 並 push
+      ——`src/rain.js` 的 `VILL_BASE` 硬編 `@main`，分支上的檔案 jsDelivr 讀得到（`@feat/…` 為 200），
+      但 `@main` 仍是 404。合併後即生效，不需改程式碼。
+      （不想動 main 時的替代測法見 §13.10）
 - [ ] `fetchRows()` 會把解析失敗的空結果寫進 60 秒快取，官網瞬時異常後會連續一分鐘
       顯示「無法取得雷達影像清單」→ 應只在解析成功時才更新快取（§7.9 意外觀察）
 - [ ] 「用我的位置」按鈕（`navigator.geolocation` 取圓心）— v1.8 刻意未做（§12.4.12）
@@ -1702,6 +1715,7 @@ ry(px) = km ÷ 110.574              ÷ (ELAT-SLAT) × IH
 | --- | --- | --- |
 | **DevTools Local Overrides**（推薦） | 真實 URL（cdn.jsdelivr.net）＋真實 `<script>` 載入＋真實 `loadScript()`，內容來自本機檔案 | 見下方步驟；repo 內已有 `.overrides/` 映射資料夾（git 忽略） |
 | 直接注入 `window.__RH_VILL_IDX` / `window.__RH_VILL[code]` | 全部下游邏輯（遮罩、下拉、查詢、降級） | `loadVillIndex()`／`loadVillTown()` 會先看 `window` 上有沒有，故這是**合法用法**不是 hack；§7.10 的實測就是這樣做的 |
+| **推到分支 + 覆寫 `window.__RH_VILL_BASE` 指向該分支**（實際採用） | 全部，且是真實網路路徑 | jsDelivr 讀得到任何公開分支（`@<branch>`），不必先動 `main`；§7.10 的補驗就是這樣做的 |
 | 另開 `--disable-web-security` 的 Chrome profile | 全部 | 但 CSP 被關掉，就測不到 CSP 相關行為了 |
 
 **Local Overrides 步驟**（一次性設定）：
