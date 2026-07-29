@@ -3,6 +3,7 @@
  * 用法：
  *   npm run api            預設 http://localhost:8787
  *   PORT=9000 npm run api
+ *   NO_TAKEOVER=1 npm run api   不接管舊服務（port 被佔就直接失敗）
  *
  *   GET /rain?county=臺北市&town=大安區
  *   GET /rain?county=臺北市&town=大安區&village=龍門里
@@ -11,6 +12,7 @@
  */
 
 import { createServer } from 'node:http';
+import { execFileSync } from 'node:child_process';
 import { LV, bandRange, PAL } from './lib/palette.mjs';
 import { buildMask } from './lib/mask.mjs';
 import { listFrames } from './lib/ncdr.mjs';
@@ -187,6 +189,64 @@ const server = createServer(async (req, res) => {
     send(500, { error: String(e && e.message || e) });
   }
 });
+
+/* ── 舊服務接管 ──────────────────────────────────────────────
+   開發時常忘了關上一次的 `npm run api`，新的一啟動就 EADDRINUSE 掛掉，
+   而且「還活著的舊行程」跑的是舊程式碼，會安靜地回應新請求 → 誤以為改動沒生效。
+   所以預設直接殺掉舊的再接手，但只殺**確定是本服務**的行程
+   （command 比對 server/index.mjs）；別人的 port 一律不碰，改為提示換 port。 */
+function pidsOnPort(port) {
+  try {
+    const out = execFileSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    return out.split('\n').map(s => +s.trim()).filter(Boolean);
+  } catch {
+    return [];   // lsof 不存在、或沒人佔用（lsof 找不到會回非 0）都當作沒有
+  }
+}
+
+function isOwnServer(pid) {
+  try {
+    const cmd = execFileSync('ps', ['-p', String(pid), '-o', 'command='],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    return /server[/\\]index\.mjs/.test(cmd);
+  } catch {
+    return false;
+  }
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function takeover(port) {
+  if (process.env.NO_TAKEOVER === '1') return;
+  for (const pid of pidsOnPort(port)) {
+    if (pid === process.pid) continue;
+    if (!isOwnServer(pid)) {
+      console.error(`✗ port ${port} 被別的程式佔用（pid ${pid}），不動它。` +
+                    `\n  換個 port：PORT=<其他 port> npm run api`);
+      process.exit(1);
+    }
+    console.log(`↻ 關閉舊的 API（pid ${pid}）…`);
+    try { process.kill(pid, 'SIGTERM'); } catch { /* 已經自己死了 */ }
+    // 等它把 port 放掉；3 秒還在就 SIGKILL
+    for (let i = 0; i < 30 && pidsOnPort(port).includes(pid); i++) await sleep(100);
+    if (pidsOnPort(port).includes(pid)) {
+      try { process.kill(pid, 'SIGKILL'); } catch { /* 同上 */ }
+      await sleep(200);
+    }
+  }
+}
+
+server.on('error', e => {
+  if (e.code === 'EADDRINUSE') {
+    console.error(`✗ port ${PORT} 仍被佔用，無法啟動。` +
+                  `\n  換個 port：PORT=8788 npm run api`);
+    process.exit(1);
+  }
+  throw e;
+});
+
+await takeover(PORT);
 
 server.listen(PORT, () => {
   console.log(`落雨小幫手 API  http://localhost:${PORT}`);

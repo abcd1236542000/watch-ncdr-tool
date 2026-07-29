@@ -49,6 +49,8 @@
 
 ```bash
 npm run api          # 啟動 API 服務（預設 8787）；不影響 bookmarklet
+                     # port 被自己的舊行程佔住會自動關掉舊的再接手（§15.11）；
+                     # 被別的程式佔用則不殺，改用 PORT=8788 npm run api
 npm run build        # 由 src/rain.js 產生 dist/rain.js（terser 壓縮 + 蓋當天日期）
 npm run build:vill   # 產生 data/vill/<版本>/（已存在則略過；加 -- --force 重跑）
 git config core.hooksPath .githooks   # 每台機器一次性：啟用 pre-commit 門禁

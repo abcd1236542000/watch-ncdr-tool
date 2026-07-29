@@ -2298,3 +2298,29 @@ GET /rain?lon=121.5436&lat=25.0264
 - 錯誤案例全部回明確狀態碼，**無 500**：海上座標／範圍外座標→404、
   不存在行政區→404、不存在村里→404 並列出可選村里、缺參數→400、非數字→400
 - 色盤 `/meta` 端點回 17 色帶 × 6 等級，與工具同源
+
+### 15.11 啟動時自動接管舊服務（2026-07-29）
+
+**問題**：開發時常忘了關上一次的 `npm run api`，再啟動就 `EADDRINUSE` 崩掉一整頁堆疊。
+更麻煩的是**沒崩的那種情況**——舊行程還活著，跑的是**舊程式碼**，卻照常回應新請求，
+於是「改了 `server/` 卻好像沒生效」，而且完全沒有錯誤訊息。
+
+**做法**（`server/index.mjs`，`listen()` 之前）：
+
+1. `lsof -nP -iTCP:<port> -sTCP:LISTEN -t` 找出佔用者。
+2. `ps -p <pid> -o command=` 比對是否為 `server/index.mjs`。
+   - **是本服務** → `SIGTERM`，輪詢 port 最多 3 秒，還在就 `SIGKILL`，然後接手。
+   - **不是** → **一律不殺**，印 `PORT=<其他 port> npm run api` 後 `exit(1)`。
+3. 另外掛 `server.on('error')`：`EADDRINUSE` 改印一行提示，不再噴 unhandled 堆疊。
+
+`NO_TAKEOVER=1 npm run api` 可關掉接管，回到「port 被佔就直接失敗」。
+
+> **為什麼要比對 command 而不是無腦殺**：8787 只是個沒註冊的常用 port，
+> 別的專案也可能在用。誤殺別人的服務是 debug 起來最莫名其妙的那種傷害。
+>
+> **為什麼需要 SIGKILL 後路**：實測舊行程若帶著 `--inspect`（`NODE_OPTIONS`），
+> 收到 SIGTERM 後會停在 `Waiting for the debugger to disconnect...` 不放 port，
+> 只靠 SIGTERM 會卡住。驗收時就是走 SIGKILL 路徑才接管成功的。
+
+**驗收**：舊 pid 存在 → 新行程印「關閉舊的 API」並成功 listen、`/meta` 正常回應；
+8788 被非本服務的 listener 佔用 → 拒殺、`exit=1`、提示換 port。
